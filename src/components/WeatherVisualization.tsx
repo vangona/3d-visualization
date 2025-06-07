@@ -3,7 +3,6 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { DeckGL } from '@deck.gl/react';
 import {
-  ScatterplotLayer,
   PointCloudLayer,
 } from '@deck.gl/layers';
 import { 
@@ -103,42 +102,69 @@ const generateMockWeatherStations = (): WeatherStation[] => {
   });
 };
 
-// Generate cloud particles based on weather data
-const generateCloudParticles = (stations: WeatherStation[]): CloudParticle[] => {
+// Generate cloud particles based on weather data within district boundaries
+const generateCloudParticles = (stations: WeatherStation[], geoJSON: SeoulGeoJSON | null): CloudParticle[] => {
   const particles: CloudParticle[] = [];
   
+  if (!geoJSON) return particles;
+  
   stations.forEach((station) => {
-    const cloudDensity = station.weather.cloudCoverage / 100;
-    const particleCount = Math.floor(cloudDensity * 500); // 더 많은 파티클로 부드러운 구름
-    
-    for (let i = 0; i < particleCount; i++) {
-      // 구름 고도: 강수량이 많을수록 낮은 구름
-      const baseAltitude = 1500 - (station.weather.precipitation * 50);
-      const altitude = baseAltitude + Math.random() * 800;
+    if (station.weather.cloudCoverage > 10) { // 구름이 있는 경우만
+      const cloudDensity = station.weather.cloudCoverage / 100;
+      const particleCount = Math.floor(cloudDensity * 300); // 행정구역에 맞게 조정
       
-      // 구름 중심부에서 멀어질수록 투명도 감소
-      const distanceFromCenter = Math.random(); // 0 = 중심, 1 = 가장자리
-      const baseOpacity = 0.15 + cloudDensity * 0.3;
-      const edgeOpacity = baseOpacity * (1 - distanceFromCenter * 0.7);
+      // 해당 구역의 GeoJSON feature 찾기
+      const districtFeature = geoJSON.features.find((f: SeoulDistrictFeature) => f.properties.sggnm === station.name);
+      if (!districtFeature) return;
       
-      // 구름 색상: 강수량에 따라 어두워짐
-      const brightness = Math.max(140, 255 - station.weather.precipitation * 6);
-      
-      // 가우시안 분포로 더 자연스러운 구름 형태
-      const gaussianX = (Math.random() + Math.random() + Math.random() - 1.5) / 1.5;
-      const gaussianY = (Math.random() + Math.random() + Math.random() - 1.5) / 1.5;
-      
-      particles.push({
-        position: [
-          station.location.longitude + gaussianX * 0.03,
-          station.location.latitude + gaussianY * 0.03,
-          altitude,
-        ],
-        size: 100 + Math.random() * 200, // 더 큰 파티클
-        density: cloudDensity,
-        color: [brightness, brightness, brightness + 15],
-        opacity: edgeOpacity,
-      });
+      try {
+        const bbox = turf.bbox(districtFeature);
+        
+        for (let i = 0; i < particleCount; i++) {
+          // 구역 내 랜덤 포인트 생성
+          let point: [number, number] | null = null;
+          
+          // 최대 5번 시도
+          for (let attempt = 0; attempt < 5; attempt++) {
+            const randomPoint = turf.randomPoint(1, { bbox });
+            if (turf.booleanPointInPolygon(randomPoint.features[0], districtFeature)) {
+              point = randomPoint.features[0].geometry.coordinates as [number, number];
+              break;
+            }
+          }
+          
+          // 포인트를 찾지 못하면 bbox 중심점 사용
+          if (!point) {
+            point = [(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2];
+          }
+          
+          // 구름 고도: 강수량이 많을수록 낮은 구름
+          const baseAltitude = 1500 - (station.weather.precipitation * 30);
+          const altitude = baseAltitude + Math.random() * 600;
+          
+          // 구름 중심부에서 멀어질수록 투명도 감소
+          const distanceFromCenter = Math.random();
+          const baseOpacity = 0.12 + cloudDensity * 0.25;
+          const edgeOpacity = baseOpacity * (1 - distanceFromCenter * 0.6);
+          
+          // 구름 색상: 강수량에 따라 어두워짐
+          const brightness = Math.max(150, 255 - station.weather.precipitation * 5);
+          
+          particles.push({
+            position: [
+              point[0],
+              point[1],
+              altitude,
+            ],
+            size: 80 + Math.random() * 160,
+            density: cloudDensity,
+            color: [brightness, brightness, brightness + 12],
+            opacity: edgeOpacity,
+          });
+        }
+      } catch (error) {
+        console.warn('Error generating cloud particles for', station.name, error);
+      }
     }
   });
   
@@ -291,7 +317,7 @@ export default function WeatherVisualization() {
 
   // Generate cloud and rain particles
   useEffect(() => {
-    setCloudParticles(generateCloudParticles(weatherStations));
+    setCloudParticles(generateCloudParticles(weatherStations, seoulGeoJSON));
     setRainParticles(generateRainParticles(weatherStations, seoulGeoJSON ?? { features: [], type: 'FeatureCollection' }));
   }, [weatherStations, seoulGeoJSON]);
 
@@ -400,25 +426,7 @@ export default function WeatherVisualization() {
       );
     }
 
-    // Weather station layer
-    layers.push(
-      new ScatterplotLayer({
-        id: 'weather-stations',
-        data: weatherStations,
-        getPosition: (d: WeatherStation) => [d.location.longitude, d.location.latitude],
-        getFillColor: (d: WeatherStation) => {
-          // 강수량에 따른 색상
-          if (d.weather.precipitation > 10) return [100, 100, 200]; // 진한 파랑
-          if (d.weather.precipitation > 1) return [150, 150, 255]; // 연한 파랑
-          return [255, 200, 100]; // 노랑 (맑음)
-        },
-        getRadius: 3000,
-        radiusMinPixels: 10,
-        radiusMaxPixels: 50,
-        pickable: true,
-        opacity: 0.8,
-      })
-    );
+    // Weather station layer 제거 - 행정구역으로 대체됨
 
     // Cloud layer
     if (cloudParticles.length > 0) {
@@ -454,23 +462,22 @@ export default function WeatherVisualization() {
   }, [weatherStations, cloudParticles, rainParticles, seoulGeoJSON]);
 
   const handleHover = useCallback(({ x, y, object }: PickingInfo) => {
-    if (object && 'weather' in object) {
-      const station = object as WeatherStation;
-      const weather = station.weather;
+    if (object && 'properties' in object && 'precipitation' in object.properties) {
+      // GeoJSON 구역 hover
+      const district = object;
+      const precipitation = district.properties.precipitation;
+      const districtName = district.properties.sggnm;
+      
       const weatherDesc = 
-        weather.precipitation > 20 ? '폭우' :
-        weather.precipitation > 10 ? '강한비' :
-        weather.precipitation > 5 ? '보통비' :
-        weather.precipitation > 1 ? '약한비' :
-        weather.cloudCoverage > 50 ? '흐림' :
-        weather.cloudCoverage > 30 ? '구름조금' : '맑음';
+        precipitation > 20 ? '폭우' :
+        precipitation > 10 ? '강한비' :
+        precipitation > 5 ? '보통비' :
+        precipitation > 1 ? '약한비' :
+        precipitation > 0 ? '이슬비' : '강수 없음';
 
-      const text = `${station.name}
+      const text = `${districtName}
 날씨: ${weatherDesc}
-강수량: ${weather.precipitation.toFixed(1)}mm/h
-온도: ${weather.temperature.toFixed(1)}°C
-습도: ${weather.humidity.toFixed(0)}%
-풍속: ${weather.windSpeed.toFixed(1)}m/s`;
+강수량: ${precipitation.toFixed(1)}mm/h`;
       
       setTooltip({ x, y, text });
     } else {
