@@ -436,7 +436,7 @@ export default function DeckGLVisualization() {
         onHover={handleHover}
       >
         <Map
-          mapStyle="mapbox://styles/mapbox/dark-v11"
+          mapStyle="mapbox://styles/mapbox/light-v11"
           mapboxAccessToken={process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN || ''}
         />
       </DeckGL>

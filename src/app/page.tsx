@@ -14,7 +14,7 @@ const WeatherVisualization = dynamic(
 );
 
 export default function Home() {
-  const [activeView, setActiveView] = useState<'data' | 'weather'>('data');
+  const [activeView, setActiveView] = useState<'data' | 'weather'>('weather');
 
   return (
     <main className="w-full h-screen relative">

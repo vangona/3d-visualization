@@ -12,6 +12,7 @@ import {
   LightingEffect,
   AmbientLight,
   DirectionalLight,
+  FlyToInterpolator,
 } from '@deck.gl/core';
 import Map from 'react-map-gl/mapbox';
 import 'mapbox-gl/dist/mapbox-gl.css';
@@ -105,26 +106,35 @@ const generateCloudParticles = (stations: WeatherStation[]): CloudParticle[] => 
   
   stations.forEach((station) => {
     const cloudDensity = station.weather.cloudCoverage / 100;
-    const particleCount = Math.floor(cloudDensity * 300); // 구름 밀도에 따른 파티클 수
+    const particleCount = Math.floor(cloudDensity * 500); // 더 많은 파티클로 부드러운 구름
     
     for (let i = 0; i < particleCount; i++) {
       // 구름 고도: 강수량이 많을수록 낮은 구름
       const baseAltitude = 1500 - (station.weather.precipitation * 50);
-      const altitude = baseAltitude + Math.random() * 500;
+      const altitude = baseAltitude + Math.random() * 800;
+      
+      // 구름 중심부에서 멀어질수록 투명도 감소
+      const distanceFromCenter = Math.random(); // 0 = 중심, 1 = 가장자리
+      const baseOpacity = 0.15 + cloudDensity * 0.3;
+      const edgeOpacity = baseOpacity * (1 - distanceFromCenter * 0.7);
       
       // 구름 색상: 강수량에 따라 어두워짐
-      const brightness = Math.max(100, 255 - station.weather.precipitation * 8);
+      const brightness = Math.max(140, 255 - station.weather.precipitation * 6);
+      
+      // 가우시안 분포로 더 자연스러운 구름 형태
+      const gaussianX = (Math.random() + Math.random() + Math.random() - 1.5) / 1.5;
+      const gaussianY = (Math.random() + Math.random() + Math.random() - 1.5) / 1.5;
       
       particles.push({
         position: [
-          station.location.longitude + (Math.random() - 0.5) * 0.02,
-          station.location.latitude + (Math.random() - 0.5) * 0.02,
+          station.location.longitude + gaussianX * 0.03,
+          station.location.latitude + gaussianY * 0.03,
           altitude,
         ],
-        size: 50 + Math.random() * 100,
+        size: 100 + Math.random() * 200, // 더 큰 파티클
         density: cloudDensity,
-        color: [brightness, brightness, brightness + 10],
-        opacity: 0.3 + cloudDensity * 0.4,
+        color: [brightness, brightness, brightness + 15],
+        opacity: edgeOpacity,
       });
     }
   });
@@ -139,24 +149,27 @@ const generateRainParticles = (stations: WeatherStation[]): RainParticle[] => {
   
   stations.forEach((station) => {
     if (station.weather.precipitation > 0) {
-      // 강수량에 비례한 빗방울 수
-      const particleCount = Math.floor(station.weather.precipitation * 20);
+      // 강수량에 비례한 빗방울 수 (더 많이)
+      const particleCount = Math.floor(station.weather.precipitation * 50);
       
       for (let i = 0; i < particleCount; i++) {
+        // 빗줄기를 표현하기 위해 다양한 시작 높이
+        const startHeight = 500 + Math.random() * 2000;
+        
         particles.push({
           id: `rain-${particleId++}`,
           position: [
-            station.location.longitude + (Math.random() - 0.5) * 0.015,
-            station.location.latitude + (Math.random() - 0.5) * 0.015,
-            1000 + Math.random() * 1000, // 1-2km 고도에서 시작
+            station.location.longitude + (Math.random() - 0.5) * 0.02,
+            station.location.latitude + (Math.random() - 0.5) * 0.02,
+            startHeight,
           ],
           velocity: [
-            (Math.random() - 0.5) * 0.5, // 약간의 횡방향 이동
             0,
-            -5 - Math.random() * 3, // 낙하 속도
+            0,
+            -15 - Math.random() * 10, // 더 빠른 낙하 속도
           ],
-          size: 1 + Math.random() * 2,
-          lifetime: Math.random() * 5,
+          size: 0.5 + Math.random() * 1, // 더 작은 빗방울
+          lifetime: Math.random() * 3,
         });
       }
     }
@@ -233,7 +246,7 @@ export default function WeatherVisualization() {
               position: [
                 particle.position[0],
                 particle.position[1],
-                1000 + Math.random() * 1000,
+                500 + Math.random() * 2000, // 빗방울 재생성 높이도 수정
               ] as [number, number, number],
             };
           }
@@ -241,8 +254,8 @@ export default function WeatherVisualization() {
           return {
             ...particle,
             position: [
-              particle.position[0] + particle.velocity[0] * 0.01,
-              particle.position[1] + particle.velocity[1] * 0.01,
+              particle.position[0],  // 횡방향 이동 제거
+              particle.position[1],  // 횡방향 이동 제거
               newAltitude,
             ] as [number, number, number],
           };
@@ -271,9 +284,6 @@ export default function WeatherVisualization() {
 
     return new LightingEffect({ ambientLight, directionalLight });
   })();
-
-  // Calculate weather effects for lighting
-  const weatherEffects = calculateWeatherEffects(weatherStations);
 
   const getLayers = useCallback(() => {
     const layers = [];
@@ -307,8 +317,8 @@ export default function WeatherVisualization() {
           getPosition: (d: CloudParticle) => d.position,
           getColor: (d: CloudParticle) => [...d.color, d.opacity * 255],
           getNormal: [0, 0, 1],
-          pointSize: 5,
-          opacity: 0.6,
+          pointSize: 15, // 더 큰 포인트 크기
+          opacity: 0.4, // 전체적으로 낮은 투명도로 겹침 효과
         })
       );
     }
@@ -320,10 +330,10 @@ export default function WeatherVisualization() {
           id: 'rain',
           data: rainParticles,
           getPosition: (d: RainParticle) => d.position,
-          getColor: [150, 180, 255, 180], // 연한 파란색 빗방울
+          getColor: [200, 210, 255, 120], // 더 연한 파란색 빗방울
           getNormal: [0, 0, -1],
-          pointSize: 2,
-          opacity: 0.5,
+          pointSize: 1, // 더 작은 빗방울
+          opacity: 0.6,
         })
       );
     }
@@ -356,10 +366,52 @@ export default function WeatherVisualization() {
     }
   }, []);
 
+  // Handle region selection
+  const handleRegionSelect = useCallback((lng: number, lat: number) => {
+    setViewState({
+      longitude: lng,
+      latitude: lat,
+      zoom: 12,
+      pitch: 45,
+      bearing: 0,
+      transitionDuration: 1000,
+      transitionInterpolator: new FlyToInterpolator(),
+    });
+  }, []);
+
   return (
     <div className="relative w-full h-screen">
       <div className="absolute top-4 left-4 z-10 bg-white p-4 rounded-lg shadow-lg max-h-[calc(100vh-2rem)] overflow-y-auto w-80 max-w-[calc(100vw-2rem)]">
         <h2 className="text-xl font-bold mb-4">🌦️ 서울시 날씨 시각화</h2>
+        
+        {/* Region selector */}
+        <div className="mb-4">
+          <h3 className="font-semibold mb-2">📍 지역 선택</h3>
+          <select 
+            onChange={(e) => {
+              const [lng, lat] = e.target.value.split(',').map(Number);
+              if (lng && lat) handleRegionSelect(lng, lat);
+            }}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">전체 보기</option>
+            {weatherStations.map((station) => (
+              <option 
+                key={station.id} 
+                value={`${station.location.longitude},${station.location.latitude}`}
+              >
+                {station.name} - {
+                  station.weather.precipitation > 20 ? '폭우 🌧️' :
+                  station.weather.precipitation > 10 ? '강한비 🌧️' :
+                  station.weather.precipitation > 5 ? '보통비 🌦️' :
+                  station.weather.precipitation > 1 ? '약한비 🌦️' :
+                  station.weather.cloudCoverage > 50 ? '흐림 ☁️' :
+                  station.weather.cloudCoverage > 30 ? '구름조금 ⛅' : '맑음 ☀️'
+                }
+              </option>
+            ))}
+          </select>
+        </div>
         
         <div className="mb-4">
           <h3 className="font-semibold mb-2">날씨 상태 범례</h3>
@@ -408,13 +460,7 @@ export default function WeatherVisualization() {
         onHover={handleHover}
       >
         <Map
-          mapStyle={
-            weatherEffects.brightness < 0.5 
-              ? "mapbox://styles/mapbox/dark-v11"        // 매우 어두운 날씨
-              : weatherEffects.brightness < 0.7 
-              ? "mapbox://styles/mapbox/outdoors-v12"    // 흐린 날씨
-              : "mapbox://styles/mapbox/streets-v12"     // 맑은 날씨
-          }
+          mapStyle="mapbox://styles/mapbox/light-v11"
           mapboxAccessToken={process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN || ''}
         />
       </DeckGL>
