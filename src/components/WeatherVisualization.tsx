@@ -57,17 +57,83 @@ interface RainParticle {
   lifetime: number;                   // 생존 시간 (초)
 }
 
-// Mock weather stations data for Seoul
+interface DongInfo {
+  dongName: string;
+  guName: string;
+  fullName: string;
+  center: [number, number];  // [lng, lat]
+  guWeatherStation: WeatherStation;
+}
+
+// Generate dong data from GeoJSON and associate with gu weather stations
+const generateDongData = (geoJSON: SeoulGeoJSON | null, weatherStations: WeatherStation[]): DongInfo[] => {
+  if (!geoJSON) return [];
+  
+  const dongList: DongInfo[] = [];
+  
+  geoJSON.features.forEach((feature) => {
+    const fullName = feature.properties.adm_nm;
+    const guName = feature.properties.sggnm;
+    
+    // Extract dong name (remove Seoul + gu prefix)
+    const parts = fullName.split(' ');
+    const dongName = parts[parts.length - 1]; // Last part is dong name
+    
+    // Find corresponding weather station for this gu
+    const guWeatherStation = weatherStations.find(station => station.name === guName);
+    if (!guWeatherStation) return;
+    
+    // Calculate centroid of the dong
+    try {
+      const centroid = turf.centroid(feature);
+      const center: [number, number] = [
+        centroid.geometry.coordinates[0],
+        centroid.geometry.coordinates[1]
+      ];
+      
+      dongList.push({
+        dongName,
+        guName,
+        fullName,
+        center,
+        guWeatherStation
+      });
+    } catch (error) {
+      console.warn(`Failed to calculate centroid for ${fullName}:`, error);
+    }
+  });
+  
+  return dongList;
+};
+
+// Mock weather stations data for Seoul - All 25 districts
 const generateMockWeatherStations = (): WeatherStation[] => {
   const seoulDistricts = [
     { name: '강남구', lng: 127.0474, lat: 37.5172 },
-    { name: '서초구', lng: 127.0327, lat: 37.4837 },
-    { name: '송파구', lng: 127.1056, lat: 37.5145 },
-    { name: '강서구', lng: 126.8497, lat: 37.5509 },
-    { name: '마포구', lng: 126.9016, lat: 37.5664 },
-    { name: '중구', lng: 126.9980, lat: 37.5636 },
-    { name: '노원구', lng: 127.0568, lat: 37.6542 },
     { name: '강동구', lng: 127.1238, lat: 37.5301 },
+    { name: '강북구', lng: 127.0277, lat: 37.6397 },
+    { name: '강서구', lng: 126.8497, lat: 37.5509 },
+    { name: '관악구', lng: 126.9515, lat: 37.4781 },
+    { name: '광진구', lng: 127.0853, lat: 37.5384 },
+    { name: '구로구', lng: 126.8876, lat: 37.4954 },
+    { name: '금천구', lng: 126.9018, lat: 37.4569 },
+    { name: '노원구', lng: 127.0568, lat: 37.6542 },
+    { name: '도봉구', lng: 127.0470, lat: 37.6658 },
+    { name: '동대문구', lng: 127.0399, lat: 37.5744 },
+    { name: '동작구', lng: 126.9393, lat: 37.5124 },
+    { name: '마포구', lng: 126.9016, lat: 37.5664 },
+    { name: '서대문구', lng: 126.9369, lat: 37.5791 },
+    { name: '서초구', lng: 127.0327, lat: 37.4837 },
+    { name: '성동구', lng: 127.0366, lat: 37.5635 },
+    { name: '성북구', lng: 127.0167, lat: 37.5893 },
+    { name: '송파구', lng: 127.1056, lat: 37.5145 },
+    { name: '양천구', lng: 126.8665, lat: 37.5170 },
+    { name: '영등포구', lng: 126.8962, lat: 37.5264 },
+    { name: '용산구', lng: 126.9910, lat: 37.5326 },
+    { name: '은평구', lng: 126.9292, lat: 37.6025 },
+    { name: '종로구', lng: 126.9816, lat: 37.5735 },
+    { name: '중구', lng: 126.9980, lat: 37.5636 },
+    { name: '중랑구', lng: 127.0937, lat: 37.6063 },
   ];
 
   // 다양한 날씨 상태 시뮬레이션
@@ -304,6 +370,7 @@ export default function WeatherVisualization() {
   const [cloudParticles, setCloudParticles] = useState<CloudParticle[]>([]);
   const [rainParticles, setRainParticles] = useState<RainParticle[]>([]);
   const [seoulGeoJSON, setSeoulGeoJSON] = useState<SeoulGeoJSON | null>(null);
+  const [dongData, setDongData] = useState<DongInfo[]>([]);
   const [, setAnimationFrame] = useState(0);
   const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
 
@@ -314,6 +381,13 @@ export default function WeatherVisualization() {
       .then(data => setSeoulGeoJSON(data))
       .catch(error => console.error('Failed to load Seoul GeoJSON:', error));
   }, []);
+
+  // Generate dong data when GeoJSON is loaded
+  useEffect(() => {
+    if (seoulGeoJSON && weatherStations.length > 0) {
+      setDongData(generateDongData(seoulGeoJSON, weatherStations));
+    }
+  }, [seoulGeoJSON, weatherStations]);
 
   // Generate cloud and rain particles
   useEffect(() => {
@@ -485,48 +559,29 @@ export default function WeatherVisualization() {
     }
   }, []);
 
-  // Handle region selection with district center calculation
-  const handleRegionSelect = useCallback((lng: number, lat: number, districtName?: string) => {
-    // 구역이 선택된 경우 해당 구역의 중심점으로 이동
-    if (districtName && seoulGeoJSON) {
-      const districtFeatures = seoulGeoJSON.features.filter((f: SeoulDistrictFeature) => f.properties.sggnm === districtName);
-      if (districtFeatures.length > 0) {
-        // 구역의 bbox 중심점 계산
-        try {
-          const bbox = turf.bbox({
-            type: "FeatureCollection",
-            features: districtFeatures
-          });
-          const centerLng = (bbox[0] + bbox[2]) / 2;
-          const centerLat = (bbox[1] + bbox[3]) / 2;
-          
-          setViewState({
-            longitude: centerLng,
-            latitude: centerLat,
-            zoom: 12,
-            pitch: 45,
-            bearing: 0,
-            transitionDuration: 1000,
-            transitionInterpolator: new FlyToInterpolator(),
-          });
-          return;
-        } catch (error) {
-          console.warn('Failed to calculate district center:', error);
-        }
-      }
-    }
+  // Handle region selection with district/dong center calculation
+  const handleRegionSelect = useCallback((lng: number, lat: number, isDong?: boolean) => {
+    const zoomLevel = isDong ? 14 : 12; // 동 단위일 때 더 확대
     
-    // fallback: 기본 위치로 이동
     setViewState({
       longitude: lng,
       latitude: lat,
-      zoom: 12,
+      zoom: zoomLevel,
       pitch: 45,
       bearing: 0,
       transitionDuration: 1000,
       transitionInterpolator: new FlyToInterpolator(),
     });
-  }, [seoulGeoJSON]);
+  }, []);
+
+  // Group dong data by gu for organized display
+  const dongsByGu = dongData.reduce((acc, dong) => {
+    if (!acc[dong.guName]) {
+      acc[dong.guName] = [];
+    }
+    acc[dong.guName].push(dong);
+    return acc;
+  }, {} as Record<string, DongInfo[]>);
 
   return (
     <div className="relative w-full h-screen">
@@ -550,27 +605,52 @@ export default function WeatherVisualization() {
                   transitionInterpolator: new FlyToInterpolator(),
                 });
               } else {
-                const [lng, lat, districtName] = e.target.value.split(',');
-                handleRegionSelect(Number(lng), Number(lat), districtName);
+                const [lng, lat, isDong] = e.target.value.split(',');
+                handleRegionSelect(Number(lng), Number(lat), isDong === 'true');
               }
             }}
             className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
-            <option value="">전체 보기</option>
-            {weatherStations.map((station) => (
-              <option 
-                key={station.id} 
-                value={`${station.location.longitude},${station.location.latitude},${station.name}`}
-              >
-                {station.name} - {
-                  station.weather.precipitation > 20 ? '폭우 🌧️' :
-                  station.weather.precipitation > 10 ? '강한비 🌧️' :
-                  station.weather.precipitation > 5 ? '보통비 🌦️' :
-                  station.weather.precipitation > 1 ? '약한비 🌦️' :
-                  station.weather.cloudCoverage > 50 ? '흐림 ☁️' :
-                  station.weather.cloudCoverage > 30 ? '구름조금 ⛅' : '맑음 ☀️'
-                }
-              </option>
+            <option value="">🏙️ 전체 보기</option>
+            
+            {/* 구 단위 선택 */}
+            <optgroup label="📍 구 단위">
+              {weatherStations.map((station) => (
+                <option 
+                  key={station.id} 
+                  value={`${station.location.longitude},${station.location.latitude},false`}
+                >
+                  {station.name} - {
+                    station.weather.precipitation > 20 ? '폭우 🌧️' :
+                    station.weather.precipitation > 10 ? '강한비 🌧️' :
+                    station.weather.precipitation > 5 ? '보통비 🌦️' :
+                    station.weather.precipitation > 1 ? '약한비 🌦️' :
+                    station.weather.cloudCoverage > 50 ? '흐림 ☁️' :
+                    station.weather.cloudCoverage > 30 ? '구름조금 ⛅' : '맑음 ☀️'
+                  }
+                </option>
+              ))}
+            </optgroup>
+
+            {/* 동 단위 선택 */}
+            {Object.keys(dongsByGu).sort().map((guName) => (
+              <optgroup key={guName} label={`🏘️ ${guName}`}>
+                {dongsByGu[guName].sort((a, b) => a.dongName.localeCompare(b.dongName)).map((dong) => (
+                  <option 
+                    key={`${dong.guName}-${dong.dongName}`}
+                    value={`${dong.center[0]},${dong.center[1]},true`}
+                  >
+                    {dong.dongName} ({dong.guName}) - {
+                      dong.guWeatherStation.weather.precipitation > 20 ? '폭우 🌧️' :
+                      dong.guWeatherStation.weather.precipitation > 10 ? '강한비 🌧️' :
+                      dong.guWeatherStation.weather.precipitation > 5 ? '보통비 🌦️' :
+                      dong.guWeatherStation.weather.precipitation > 1 ? '약한비 🌦️' :
+                      dong.guWeatherStation.weather.cloudCoverage > 50 ? '흐림 ☁️' :
+                      dong.guWeatherStation.weather.cloudCoverage > 30 ? '구름조금 ⛅' : '맑음 ☀️'
+                    }
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
         </div>
