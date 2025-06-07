@@ -16,6 +16,9 @@ import {
 } from '@deck.gl/core';
 import Map from 'react-map-gl/mapbox';
 import 'mapbox-gl/dist/mapbox-gl.css';
+import { GeoJsonLayer } from '@deck.gl/layers';
+import * as turf from '@turf/turf';
+import { SeoulDistrictFeature, SeoulGeoJSON } from '@/data/seoul-geojson-loader';
 
 // Types
 interface WeatherStation {
@@ -142,35 +145,89 @@ const generateCloudParticles = (stations: WeatherStation[]): CloudParticle[] => 
   return particles;
 };
 
-// Generate rain particles based on precipitation
-const generateRainParticles = (stations: WeatherStation[]): RainParticle[] => {
+// Generate rain particles based on precipitation within district boundaries
+const generateRainParticles = (stations: WeatherStation[], geoJSON: SeoulGeoJSON): RainParticle[] => {
   const particles: RainParticle[] = [];
   let particleId = 0;
+  
+  if (!geoJSON) return particles;
   
   stations.forEach((station) => {
     if (station.weather.precipitation > 0) {
       // 강수량에 비례한 빗방울 수 (더 많이)
-      const particleCount = Math.floor(station.weather.precipitation * 50);
+      const particleCount = Math.floor(station.weather.precipitation * 30);
       
       for (let i = 0; i < particleCount; i++) {
-        // 빗줄기를 표현하기 위해 다양한 시작 높이
-        const startHeight = 500 + Math.random() * 2000;
+        // 해당 구역의 GeoJSON feature 찾기 (sggnm 속성 사용)
+        const districtFeature = geoJSON.features.find((f: SeoulDistrictFeature) => f.properties.sggnm === station.name);
+        if (!districtFeature) {
+          // fallback: 스테이션 주변에 랜덤 포인트 생성
+          particles.push({
+            id: `rain-${particleId++}`,
+            position: [
+              station.location.longitude + (Math.random() - 0.5) * 0.01,
+              station.location.latitude + (Math.random() - 0.5) * 0.01,
+              500 + Math.random() * 2000,
+            ],
+            velocity: [0, 0, -15 - Math.random() * 10],
+            size: 0.5 + Math.random() * 1,
+            lifetime: Math.random() * 3,
+          });
+          continue;
+        }
         
-        particles.push({
-          id: `rain-${particleId++}`,
-          position: [
-            station.location.longitude + (Math.random() - 0.5) * 0.02,
-            station.location.latitude + (Math.random() - 0.5) * 0.02,
-            startHeight,
-          ],
-          velocity: [
-            0,
-            0,
-            -15 - Math.random() * 10, // 더 빠른 낙하 속도
-          ],
-          size: 0.5 + Math.random() * 1, // 더 작은 빗방울
-          lifetime: Math.random() * 3,
-        });
+        try {
+          // turf.js를 사용하여 폴리곤 내부의 랜덤 포인트 생성
+          const bbox = turf.bbox(districtFeature);
+          let point: [number, number] | null = null;
+          
+          // 최대 10번 시도
+          for (let attempt = 0; attempt < 10; attempt++) {
+            const randomPoint = turf.randomPoint(1, { bbox });
+            if (turf.booleanPointInPolygon(randomPoint.features[0], districtFeature)) {
+              point = randomPoint.features[0].geometry.coordinates as [number, number];
+              break;
+            }
+          }
+          
+          // 포인트를 찾지 못하면 스테이션 위치 사용
+          if (!point) {
+            point = [station.location.longitude, station.location.latitude];
+          }
+          
+          // 빗줄기를 표현하기 위해 다양한 시작 높이
+          const startHeight = 500 + Math.random() * 2000;
+          
+          particles.push({
+            id: `rain-${particleId++}`,
+            position: [
+              point[0],
+              point[1],
+              startHeight,
+            ],
+            velocity: [
+              0,
+              0,
+              -15 - Math.random() * 10, // 더 빠른 낙하 속도
+            ],
+            size: 0.5 + Math.random() * 1, // 더 작은 빗방울
+            lifetime: Math.random() * 3,
+          });
+        } catch (error: unknown) {
+          console.error('Error generating rain particles:', error);
+          // 에러 발생 시 스테이션 주변에 생성
+          particles.push({
+            id: `rain-${particleId++}`,
+            position: [
+              station.location.longitude + (Math.random() - 0.5) * 0.01,
+              station.location.latitude + (Math.random() - 0.5) * 0.01,
+              500 + Math.random() * 2000,
+            ],
+            velocity: [0, 0, -15 - Math.random() * 10],
+            size: 0.5 + Math.random() * 1,
+            lifetime: Math.random() * 3,
+          });
+        }
       }
     }
   });
@@ -220,14 +277,23 @@ export default function WeatherVisualization() {
   const [weatherStations] = useState<WeatherStation[]>(generateMockWeatherStations());
   const [cloudParticles, setCloudParticles] = useState<CloudParticle[]>([]);
   const [rainParticles, setRainParticles] = useState<RainParticle[]>([]);
+  const [seoulGeoJSON, setSeoulGeoJSON] = useState<SeoulGeoJSON | null>(null);
   const [, setAnimationFrame] = useState(0);
   const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
+
+  // Load Seoul GeoJSON data
+  useEffect(() => {
+    fetch('/data/hangjeongdong_서울특별시.geojson')
+      .then(response => response.json())
+      .then(data => setSeoulGeoJSON(data))
+      .catch(error => console.error('Failed to load Seoul GeoJSON:', error));
+  }, []);
 
   // Generate cloud and rain particles
   useEffect(() => {
     setCloudParticles(generateCloudParticles(weatherStations));
-    setRainParticles(generateRainParticles(weatherStations));
-  }, [weatherStations]);
+    setRainParticles(generateRainParticles(weatherStations, seoulGeoJSON ?? { features: [], type: 'FeatureCollection' }));
+  }, [weatherStations, seoulGeoJSON]);
 
   // Animation loop for rain particles
   useEffect(() => {
@@ -241,12 +307,13 @@ export default function WeatherVisualization() {
           
           // 땅에 닿으면 재생성
           if (newAltitude < 0) {
+            // 간단하게 같은 위치에서 재생성
             return {
               ...particle,
               position: [
                 particle.position[0],
                 particle.position[1],
-                500 + Math.random() * 2000, // 빗방울 재생성 높이도 수정
+                500 + Math.random() * 2000,
               ] as [number, number, number],
             };
           }
@@ -265,7 +332,7 @@ export default function WeatherVisualization() {
 
     const intervalId = setInterval(animate, 50); // 20fps for smooth animation
     return () => clearInterval(intervalId);
-  }, []);
+  }, [weatherStations]);
 
   // Calculate lighting based on weather
   const lightingEffect = (() => {
@@ -287,6 +354,51 @@ export default function WeatherVisualization() {
 
   const getLayers = useCallback(() => {
     const layers = [];
+
+    // District boundary layer using GeoJSON - 비가 오는 구역 표시
+    const rainingDistricts = weatherStations.filter(station => station.weather.precipitation > 0);
+    
+    if (rainingDistricts.length > 0 && seoulGeoJSON) {
+      // 비가 오는 구역만 필터링한 GeoJSON 생성 (sggnm 속성 사용)
+      const filteredFeatures = seoulGeoJSON.features.filter((feature: SeoulDistrictFeature) => 
+        rainingDistricts.some(station => station.name === feature.properties.sggnm)
+      );
+
+      const rainingGeoJSON = {
+        type: "FeatureCollection" as const,
+        features: filteredFeatures.map((feature: SeoulDistrictFeature) => {
+          const station = rainingDistricts.find(s => s.name === feature.properties.sggnm);
+          return {
+            ...feature,
+            type: "Feature" as const,
+            properties: {
+              ...feature.properties,
+              precipitation: station?.weather.precipitation || 0
+            }
+          };
+        })
+      };
+
+      layers.push(
+        new GeoJsonLayer({
+          id: 'district-rain-areas',
+          data: rainingGeoJSON,
+          getFillColor: (f: { properties: { precipitation: number } }) => {
+            // 강수량에 따른 색상과 투명도
+            const intensity = Math.min(f.properties.precipitation / 30, 1);
+            return [50, 100, 200, intensity * 80]; // 파란색, 투명도는 강수량에 비례
+          },
+          getLineColor: [80, 120, 200, 150],
+          getLineWidth: 20,
+          lineWidthMinPixels: 2,
+          lineWidthMaxPixels: 5,
+          pickable: true,
+          stroked: true,
+          filled: true,
+          extruded: false,
+        })
+      );
+    }
 
     // Weather station layer
     layers.push(
@@ -339,7 +451,7 @@ export default function WeatherVisualization() {
     }
 
     return layers;
-  }, [weatherStations, cloudParticles, rainParticles]);
+  }, [weatherStations, cloudParticles, rainParticles, seoulGeoJSON]);
 
   const handleHover = useCallback(({ x, y, object }: PickingInfo) => {
     if (object && 'weather' in object) {
@@ -366,8 +478,38 @@ export default function WeatherVisualization() {
     }
   }, []);
 
-  // Handle region selection
-  const handleRegionSelect = useCallback((lng: number, lat: number) => {
+  // Handle region selection with district center calculation
+  const handleRegionSelect = useCallback((lng: number, lat: number, districtName?: string) => {
+    // 구역이 선택된 경우 해당 구역의 중심점으로 이동
+    if (districtName && seoulGeoJSON) {
+      const districtFeatures = seoulGeoJSON.features.filter((f: SeoulDistrictFeature) => f.properties.sggnm === districtName);
+      if (districtFeatures.length > 0) {
+        // 구역의 bbox 중심점 계산
+        try {
+          const bbox = turf.bbox({
+            type: "FeatureCollection",
+            features: districtFeatures
+          });
+          const centerLng = (bbox[0] + bbox[2]) / 2;
+          const centerLat = (bbox[1] + bbox[3]) / 2;
+          
+          setViewState({
+            longitude: centerLng,
+            latitude: centerLat,
+            zoom: 12,
+            pitch: 45,
+            bearing: 0,
+            transitionDuration: 1000,
+            transitionInterpolator: new FlyToInterpolator(),
+          });
+          return;
+        } catch (error) {
+          console.warn('Failed to calculate district center:', error);
+        }
+      }
+    }
+    
+    // fallback: 기본 위치로 이동
     setViewState({
       longitude: lng,
       latitude: lat,
@@ -377,7 +519,7 @@ export default function WeatherVisualization() {
       transitionDuration: 1000,
       transitionInterpolator: new FlyToInterpolator(),
     });
-  }, []);
+  }, [seoulGeoJSON]);
 
   return (
     <div className="relative w-full h-screen">
@@ -389,8 +531,21 @@ export default function WeatherVisualization() {
           <h3 className="font-semibold mb-2">📍 지역 선택</h3>
           <select 
             onChange={(e) => {
-              const [lng, lat] = e.target.value.split(',').map(Number);
-              if (lng && lat) handleRegionSelect(lng, lat);
+              if (e.target.value === "") {
+                // 전체 보기
+                setViewState({
+                  longitude: 126.9780,
+                  latitude: 37.5665,
+                  zoom: 10.5,
+                  pitch: 45,
+                  bearing: 0,
+                  transitionDuration: 1000,
+                  transitionInterpolator: new FlyToInterpolator(),
+                });
+              } else {
+                const [lng, lat, districtName] = e.target.value.split(',');
+                handleRegionSelect(Number(lng), Number(lat), districtName);
+              }
             }}
             className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
@@ -398,7 +553,7 @@ export default function WeatherVisualization() {
             {weatherStations.map((station) => (
               <option 
                 key={station.id} 
-                value={`${station.location.longitude},${station.location.latitude}`}
+                value={`${station.location.longitude},${station.location.latitude},${station.name}`}
               >
                 {station.name} - {
                   station.weather.precipitation > 20 ? '폭우 🌧️' :
