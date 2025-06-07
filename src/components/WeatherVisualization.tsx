@@ -65,6 +65,115 @@ interface DongInfo {
   guWeatherStation: WeatherStation;
 }
 
+// Weather state color definitions (5-level system)
+interface WeatherColorConfig {
+  id: string;
+  name: string;
+  emoji: string;
+  precipitation: [number, number]; // [min, max] mm/h
+  cloudCoverage: [number, number]; // [min, max] %
+  colors: {
+    cloud: [number, number, number, number]; // RGBA
+    rain: [number, number, number, number];  // RGBA
+    ambient: [number, number, number];       // RGB
+    sky: { brightness: number; contrast: number };
+  };
+}
+
+const WEATHER_STATES: WeatherColorConfig[] = [
+  {
+    id: 'clear',
+    name: '맑음',
+    emoji: '☀️',
+    precipitation: [0, 0],
+    cloudCoverage: [0, 20],
+    colors: {
+      cloud: [255, 255, 255, 0.15],    // 매우 희미한 흰색 구름
+      rain: [135, 206, 235, 0],        // 비 없음
+      ambient: [255, 248, 220],        // 따뜻한 햇빛
+      sky: { brightness: 1.0, contrast: 1.0 }
+    }
+  },
+  {
+    id: 'partly_cloudy',
+    name: '구름조금',
+    emoji: '⛅',
+    precipitation: [0, 0.5],
+    cloudCoverage: [20, 50],
+    colors: {
+      cloud: [250, 250, 250, 0.25],    // 매우 밝은 흰색 구름
+      rain: [176, 196, 222, 0.1],      // 매우 약한 비
+      ambient: [245, 245, 220],        // 부드러운 노란빛
+      sky: { brightness: 0.9, contrast: 0.95 }
+    }
+  },
+  {
+    id: 'cloudy',
+    name: '흐림',
+    emoji: '☁️',
+    precipitation: [0.5, 2],
+    cloudCoverage: [50, 75],
+    colors: {
+      cloud: [230, 230, 230, 0.4],     // 밝은 회색 구름
+      rain: [119, 136, 153, 0.3],      // 약한 회색 비
+      ambient: [220, 220, 220],        // 차가운 회색빛
+      sky: { brightness: 0.75, contrast: 0.85 }
+    }
+  },
+  {
+    id: 'rainy',
+    name: '비',
+    emoji: '🌧️',
+    precipitation: [2, 10],
+    cloudCoverage: [75, 90],
+    colors: {
+      cloud: [180, 180, 180, 0.6],     // 중간 회색 구름
+      rain: [70, 130, 180, 0.6],       // 파란빛 비
+      ambient: [169, 169, 169],        // 어두운 회색빛
+      sky: { brightness: 0.5, contrast: 0.7 }
+    }
+  },
+  {
+    id: 'heavy_rain',
+    name: '폭우',
+    emoji: '⛈️',
+    precipitation: [10, 50],
+    cloudCoverage: [90, 100],
+    colors: {
+      cloud: [120, 120, 120, 0.8],     // 어두운 회색 구름 (덜 검게)
+      rain: [25, 25, 112, 0.8],        // 짙은 남색 비
+      ambient: [105, 105, 105],        // 매우 어두운 회색
+      sky: { brightness: 0.3, contrast: 0.6 }
+    }
+  }
+];
+
+// Function to determine weather state based on precipitation and cloud coverage
+const getWeatherState = (precipitation: number, cloudCoverage: number): WeatherColorConfig => {
+  for (const state of WEATHER_STATES) {
+    const [minPrec, maxPrec] = state.precipitation;
+    const [minCloud, maxCloud] = state.cloudCoverage;
+    
+    if (precipitation >= minPrec && precipitation <= maxPrec && 
+        cloudCoverage >= minCloud && cloudCoverage <= maxCloud) {
+      return state;
+    }
+  }
+  
+  // Fallback: determine by precipitation level
+  if (precipitation >= 10) return WEATHER_STATES[4]; // heavy_rain
+  if (precipitation >= 2) return WEATHER_STATES[3];  // rainy
+  if (precipitation >= 0.5) return WEATHER_STATES[2]; // cloudy
+  if (cloudCoverage >= 20) return WEATHER_STATES[1]; // partly_cloudy
+  return WEATHER_STATES[0]; // clear
+};
+
+// Helper function to get weather display for station
+const getWeatherDisplay = (station: WeatherStation): string => {
+  const weatherState = getWeatherState(station.weather.precipitation, station.weather.cloudCoverage);
+  return `${weatherState.name} ${weatherState.emoji}`;
+};
+
 // Generate dong data from GeoJSON and associate with gu weather stations
 const generateDongData = (geoJSON: SeoulGeoJSON | null, weatherStations: WeatherStation[]): DongInfo[] => {
   if (!geoJSON) return [];
@@ -175,9 +284,14 @@ const generateCloudParticles = (stations: WeatherStation[], geoJSON: SeoulGeoJSO
   if (!geoJSON) return particles;
   
   stations.forEach((station) => {
-    if (station.weather.cloudCoverage > 10) { // 구름이 있는 경우만
+    // Get weather state and color configuration
+    const weatherState = getWeatherState(station.weather.precipitation, station.weather.cloudCoverage);
+    
+    if (station.weather.cloudCoverage > 5) { // 구름이 있는 경우만 (더 민감하게)
       const cloudDensity = station.weather.cloudCoverage / 100;
-      const particleCount = Math.floor(cloudDensity * 300); // 행정구역에 맞게 조정
+      
+      // 구름 클러스터 수: 밀도에 따라 조정
+      const clusterCount = Math.floor(cloudDensity * 8) + 2;
       
       // 해당 구역의 GeoJSON feature 찾기
       const districtFeature = geoJSON.features.find((f: SeoulDistrictFeature) => f.properties.sggnm === station.name);
@@ -186,47 +300,77 @@ const generateCloudParticles = (stations: WeatherStation[], geoJSON: SeoulGeoJSO
       try {
         const bbox = turf.bbox(districtFeature);
         
-        for (let i = 0; i < particleCount; i++) {
-          // 구역 내 랜덤 포인트 생성
-          let point: [number, number] | null = null;
+        // 구름 클러스터 생성
+        for (let cluster = 0; cluster < clusterCount; cluster++) {
+          // 각 클러스터의 중심점 찾기
+          let clusterCenter: [number, number] | null = null;
           
-          // 최대 5번 시도
           for (let attempt = 0; attempt < 5; attempt++) {
             const randomPoint = turf.randomPoint(1, { bbox });
             if (turf.booleanPointInPolygon(randomPoint.features[0], districtFeature)) {
-              point = randomPoint.features[0].geometry.coordinates as [number, number];
+              clusterCenter = randomPoint.features[0].geometry.coordinates as [number, number];
               break;
             }
           }
           
-          // 포인트를 찾지 못하면 bbox 중심점 사용
-          if (!point) {
-            point = [(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2];
+          if (!clusterCenter) {
+            clusterCenter = [(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2];
           }
           
-          // 구름 고도: 강수량이 많을수록 낮은 구름
-          const baseAltitude = 1500 - (station.weather.precipitation * 30);
-          const altitude = baseAltitude + Math.random() * 600;
+          // 각 클러스터 내에 여러 크기의 파티클 생성 (줌 레벨 고려)
+          const particlesPerCluster = Math.floor(cloudDensity * 20) + 8; // 더 많은 파티클
           
-          // 구름 중심부에서 멀어질수록 투명도 감소
-          const distanceFromCenter = Math.random();
-          const baseOpacity = 0.12 + cloudDensity * 0.25;
-          const edgeOpacity = baseOpacity * (1 - distanceFromCenter * 0.6);
-          
-          // 구름 색상: 강수량에 따라 어두워짐
-          const brightness = Math.max(150, 255 - station.weather.precipitation * 5);
-          
-          particles.push({
-            position: [
-              point[0],
-              point[1],
-              altitude,
-            ],
-            size: 80 + Math.random() * 160,
-            density: cloudDensity,
-            color: [brightness, brightness, brightness + 12],
-            opacity: edgeOpacity,
-          });
+          for (let i = 0; i < particlesPerCluster; i++) {
+            // 클러스터 중심 주변에 파티클 분산 (더 자연스러운 분산)
+            const spreadRadius = 0.002 + Math.random() * 0.008; // 가변적인 분산 반경
+            const angle = Math.random() * Math.PI * 2;
+            const distance = Math.pow(Math.random(), 0.7) * spreadRadius; // 중심부에 더 집중
+            
+            const point: [number, number] = [
+              clusterCenter[0] + Math.cos(angle) * distance,
+              clusterCenter[1] + Math.sin(angle) * distance
+            ];
+            
+            // 구름 고도: 강수량이 많을수록 낮은 구름 + 클러스터별 변화
+            const baseAltitude = 1800 - (station.weather.precipitation * 40) + (cluster * 200);
+            const altitude = baseAltitude + Math.random() * 800;
+            
+            // 클러스터 중심에서의 거리에 따른 투명도 계산 (더 부드러운 그라데이션)
+            const distanceFromClusterCenter = distance / spreadRadius;
+            const baseOpacity = weatherState.colors.cloud[3];
+            const fadeEffect = Math.pow(1 - distanceFromClusterCenter, 1.5); // 더 자연스러운 페이드
+            const clusterOpacity = baseOpacity * fadeEffect * (0.6 + Math.random() * 0.4); // 투명도 변화
+            
+            // 날씨 상태에 따른 구름 색상 적용 (약간의 색상 변화 추가)
+            const [r, g, b] = weatherState.colors.cloud;
+            const colorVariation = 0.9 + Math.random() * 0.2; // 0.9-1.1 색상 변화
+            const finalR = Math.min(255, r * colorVariation);
+            const finalG = Math.min(255, g * colorVariation);
+            const finalB = Math.min(255, b * colorVariation);
+            
+            // 구름 크기: 클러스터 내에서 다양한 크기 + 날씨별 배율
+            const sizeRandomness = Math.random();
+            const baseSizeVariation = sizeRandomness < 0.3 ? 20 + Math.random() * 40 : // 30% 작은 구름
+                                     sizeRandomness < 0.7 ? 45 + Math.random() * 60 : // 40% 중간 구름
+                                     80 + Math.random() * 100; // 30% 큰 구름
+            
+            const sizeMultiplier = weatherState.id === 'heavy_rain' ? 1.3 : 
+                                  weatherState.id === 'rainy' ? 1.1 :
+                                  weatherState.id === 'cloudy' ? 1.0 : 
+                                  weatherState.id === 'partly_cloudy' ? 0.8 : 0.7;
+            
+            particles.push({
+              position: [
+                point[0],
+                point[1],
+                altitude,
+              ],
+              size: baseSizeVariation * sizeMultiplier,
+              density: cloudDensity,
+              color: [finalR, finalG, finalB],
+              opacity: Math.max(0.03, Math.min(0.8, clusterOpacity)), // 투명도 범위 제한
+            });
+          }
         }
       } catch (error) {
         console.warn('Error generating cloud particles for', station.name, error);
@@ -245,15 +389,29 @@ const generateRainParticles = (stations: WeatherStation[], geoJSON: SeoulGeoJSON
   if (!geoJSON) return particles;
   
   stations.forEach((station) => {
+    // Get weather state and color configuration
+    const weatherState = getWeatherState(station.weather.precipitation, station.weather.cloudCoverage);
+    
     if (station.weather.precipitation > 0) {
-      // 강수량에 비례한 빗방울 수 (더 많이)
-      const particleCount = Math.floor(station.weather.precipitation * 30);
+      // 강수량에 비례한 빗방울 수 (날씨 상태에 따라 조정)
+      const baseCount = station.weather.precipitation * 25;
+      const stateMultiplier = weatherState.id === 'heavy_rain' ? 2.0 :
+                             weatherState.id === 'rainy' ? 1.5 :
+                             weatherState.id === 'cloudy' ? 1.2 : 1.0;
+      const particleCount = Math.floor(baseCount * stateMultiplier);
       
       for (let i = 0; i < particleCount; i++) {
         // 해당 구역의 GeoJSON feature 찾기 (sggnm 속성 사용)
         const districtFeature = geoJSON.features.find((f: SeoulDistrictFeature) => f.properties.sggnm === station.name);
         if (!districtFeature) {
           // fallback: 스테이션 주변에 랜덤 포인트 생성
+          const velocity = weatherState.id === 'heavy_rain' ? -25 - Math.random() * 15 :
+                          weatherState.id === 'rainy' ? -20 - Math.random() * 10 :
+                          -15 - Math.random() * 8;
+          const rainSize = weatherState.id === 'heavy_rain' ? 1.5 + Math.random() * 2 :
+                          weatherState.id === 'rainy' ? 1.0 + Math.random() * 1.5 :
+                          0.5 + Math.random() * 1;
+          
           particles.push({
             id: `rain-${particleId++}`,
             position: [
@@ -261,8 +419,8 @@ const generateRainParticles = (stations: WeatherStation[], geoJSON: SeoulGeoJSON
               station.location.latitude + (Math.random() - 0.5) * 0.01,
               500 + Math.random() * 2000,
             ],
-            velocity: [0, 0, -15 - Math.random() * 10],
-            size: 0.5 + Math.random() * 1,
+            velocity: [0, 0, velocity],
+            size: rainSize,
             lifetime: Math.random() * 3,
           });
           continue;
@@ -290,6 +448,14 @@ const generateRainParticles = (stations: WeatherStation[], geoJSON: SeoulGeoJSON
           // 빗줄기를 표현하기 위해 다양한 시작 높이
           const startHeight = 500 + Math.random() * 2000;
           
+          // 날씨 상태에 따른 비 속도와 크기 조정
+          const velocity = weatherState.id === 'heavy_rain' ? -25 - Math.random() * 15 :
+                          weatherState.id === 'rainy' ? -20 - Math.random() * 10 :
+                          -15 - Math.random() * 8;
+          const rainSize = weatherState.id === 'heavy_rain' ? 1.5 + Math.random() * 2 :
+                          weatherState.id === 'rainy' ? 1.0 + Math.random() * 1.5 :
+                          0.5 + Math.random() * 1;
+          
           particles.push({
             id: `rain-${particleId++}`,
             position: [
@@ -300,9 +466,9 @@ const generateRainParticles = (stations: WeatherStation[], geoJSON: SeoulGeoJSON
             velocity: [
               0,
               0,
-              -15 - Math.random() * 10, // 더 빠른 낙하 속도
+              velocity,
             ],
-            size: 0.5 + Math.random() * 1, // 더 작은 빗방울
+            size: rainSize,
             lifetime: Math.random() * 3,
           });
         } catch (error: unknown) {
@@ -332,29 +498,22 @@ const calculateWeatherEffects = (stations: WeatherStation[]) => {
   const avgPrecipitation = stations.reduce((sum, s) => sum + s.weather.precipitation, 0) / stations.length;
   const avgCloudCoverage = stations.reduce((sum, s) => sum + s.weather.cloudCoverage, 0) / stations.length;
   
-  // 날씨에 따른 밝기와 대비 조정
-  let brightness = 1.0;
-  let contrast = 1.0;
+  // 평균 날씨 상태 결정
+  const overallWeatherState = getWeatherState(avgPrecipitation, avgCloudCoverage);
   
-  if (avgPrecipitation > 20) {
-    // 강한 비
-    brightness = 0.4;
-    contrast = 0.6;
-  } else if (avgPrecipitation > 5) {
-    // 보통 비
-    brightness = 0.6;
-    contrast = 0.7;
-  } else if (avgPrecipitation > 1) {
-    // 약한 비
-    brightness = 0.8;
-    contrast = 0.85;
-  } else if (avgCloudCoverage > 50) {
-    // 흐림
-    brightness = 0.85;
-    contrast = 0.9;
-  }
+  // 날씨 상태에 따른 밝기와 대비 적용
+  const { brightness, contrast } = overallWeatherState.colors.sky;
   
-  return { brightness, contrast };
+  // 조명 색상도 날씨 상태에 따라 조정
+  const [ambientR, ambientG, ambientB] = overallWeatherState.colors.ambient;
+  const ambientColor = [ambientR / 255, ambientG / 255, ambientB / 255];
+  
+  return { 
+    brightness, 
+    contrast,
+    ambientColor,
+    weatherState: overallWeatherState
+  };
 };
 
 export default function WeatherVisualization() {
@@ -438,14 +597,17 @@ export default function WeatherVisualization() {
   const lightingEffect = (() => {
     const weatherEffects = calculateWeatherEffects(weatherStations);
     
+    // 날씨 상태에 따른 조명 색상 적용
+    const ambientColor = weatherEffects.ambientColor.map(c => c * 255) as [number, number, number];
+    
     const ambientLight = new AmbientLight({
-      color: [255, 255, 255],
-      intensity: weatherEffects.brightness,
+      color: ambientColor,
+      intensity: weatherEffects.brightness * 0.8,
     });
 
     const directionalLight = new DirectionalLight({
-      color: [255, 255, 255],
-      intensity: weatherEffects.brightness * 1.2,
+      color: ambientColor,
+      intensity: weatherEffects.brightness * 1.0,
       direction: [-1, -3, -1],
     });
 
@@ -620,14 +782,7 @@ export default function WeatherVisualization() {
                   key={station.id} 
                   value={`${station.location.longitude},${station.location.latitude},false`}
                 >
-                  {station.name} - {
-                    station.weather.precipitation > 20 ? '폭우 🌧️' :
-                    station.weather.precipitation > 10 ? '강한비 🌧️' :
-                    station.weather.precipitation > 5 ? '보통비 🌦️' :
-                    station.weather.precipitation > 1 ? '약한비 🌦️' :
-                    station.weather.cloudCoverage > 50 ? '흐림 ☁️' :
-                    station.weather.cloudCoverage > 30 ? '구름조금 ⛅' : '맑음 ☀️'
-                  }
+                  {station.name} - {getWeatherDisplay(station)}
                 </option>
               ))}
             </optgroup>
@@ -640,14 +795,7 @@ export default function WeatherVisualization() {
                     key={`${dong.guName}-${dong.dongName}`}
                     value={`${dong.center[0]},${dong.center[1]},true`}
                   >
-                    {dong.dongName} ({dong.guName}) - {
-                      dong.guWeatherStation.weather.precipitation > 20 ? '폭우 🌧️' :
-                      dong.guWeatherStation.weather.precipitation > 10 ? '강한비 🌧️' :
-                      dong.guWeatherStation.weather.precipitation > 5 ? '보통비 🌦️' :
-                      dong.guWeatherStation.weather.precipitation > 1 ? '약한비 🌦️' :
-                      dong.guWeatherStation.weather.cloudCoverage > 50 ? '흐림 ☁️' :
-                      dong.guWeatherStation.weather.cloudCoverage > 30 ? '구름조금 ⛅' : '맑음 ☀️'
-                    }
+                    {dong.dongName} ({dong.guName}) - {getWeatherDisplay(dong.guWeatherStation)}
                   </option>
                 ))}
               </optgroup>
@@ -656,27 +804,31 @@ export default function WeatherVisualization() {
         </div>
         
         <div className="mb-4">
-          <h3 className="font-semibold mb-2">날씨 상태 범례</h3>
+          <h3 className="font-semibold mb-2">날씨 상태 범례 (5단계)</h3>
           <div className="space-y-1 text-sm">
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 bg-yellow-400 rounded"></div>
-              <span>맑음 (강수량 0mm)</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 bg-blue-300 rounded"></div>
-              <span>약한비 (1-5mm)</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 bg-blue-500 rounded"></div>
-              <span>강한비 (10mm 이상)</span>
-            </div>
+            {WEATHER_STATES.map((state) => (
+              <div key={state.id} className="flex items-center gap-2">
+                <div 
+                  className="w-4 h-4 rounded"
+                  style={{
+                    backgroundColor: `rgb(${state.colors.cloud[0]}, ${state.colors.cloud[1]}, ${state.colors.cloud[2]})`,
+                    opacity: state.colors.cloud[3]
+                  }}
+                ></div>
+                <span>
+                  {state.emoji} {state.name} ({state.precipitation[0]}-{state.precipitation[1]}mm/h)
+                </span>
+              </div>
+            ))}
           </div>
         </div>
 
         <div className="text-xs text-gray-600">
-          <p className="mb-2">💡 구름의 밀도와 높이는 강수량에 따라 변합니다.</p>
-          <p className="mb-2">🌧️ 비 파티클은 실시간으로 애니메이션됩니다.</p>
-          <p>☀️ 하늘 밝기는 날씨 상태를 반영합니다.</p>
+          <p className="mb-2">🎨 5단계 날씨 상태별 색상 및 효과 차별화</p>
+          <p className="mb-2">☁️ 구름: 색상/크기/투명도가 날씨에 따라 변화</p>
+          <p className="mb-2">🌧️ 비: 속도/크기/밀도가 강수량에 비례</p>
+          <p className="mb-2">💡 조명: 날씨 상태별 색온도 및 밝기 자동 조정</p>
+          <p>🗺️ 지도: 하늘 밝기가 실시간 날씨를 반영</p>
         </div>
       </div>
 
