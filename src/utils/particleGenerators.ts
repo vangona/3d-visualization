@@ -113,14 +113,12 @@ const generateSingleCloudParticle = (
   const fadeEffect = Math.pow(1 - distanceFromClusterCenter, 1.2); // 더 부드러운 페이드
   const clusterOpacity = baseOpacity * fadeEffect * (0.7 + Math.random() * 0.4); // 더 진한 투명도
   
-  // 날씨 상태에 따른 구름 색상 적용 (RGB만 사용, 알파는 제외)
-  const [r, g, b] = weatherState.colors.cloud.slice(0, 3); // 알파 채널 제외
-  console.log(`Cloud color for ${weatherState.id}:`, [r, g, b]);
+  // 날씨 상태에 따른 구름 색상 적용
+  const [r, g, b] = weatherState.colors.cloud.slice(0, 3);
   // 색상 변화 비활성화 (원래 색상 유지)
   const finalR = r;
   const finalG = g;
   const finalB = b;
-  console.log(`Final cloud color:`, [finalR, finalG, finalB]);
   
   // 구름 크기를 더 크고 일관성 있게 조정
   const sizeRandomness = Math.random();

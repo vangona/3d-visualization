@@ -747,25 +747,46 @@ export default function WeatherVisualization() {
                     </div>
                   </div>
 
-                  {/* Feature Descriptions */}
+                  {/* Particle System Guide */}
                   <div className="space-y-3">
-                    <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg p-3">
-                      <div className="text-sm font-medium text-gray-900 mb-2">🎨 시각화 특징</div>
+                    <div className="bg-gradient-to-r from-blue-50 to-cyan-50 rounded-lg p-3">
+                      <div className="text-sm font-medium text-gray-900 mb-2">☁️ 3D 날씨 효과 시스템</div>
                       <div className="space-y-1 text-xs text-gray-700">
-                        <div>• 실시간 날씨 효과 시뮬레이션</div>
-                        <div>• 줌 레벨별 차별화된 시각화</div>
-                        <div>• 3D 건물 및 지형 모델링</div>
-                        <div>• 인터랙티브 지역 탐색</div>
+                        <div>• 구름: 높이 1600-2800m에서 둥근 형태로 표시</div>
+                        <div>• 비: 높이 300-1500m에서 수직 낙하</div>
+                        <div>• 색상: 날씨 상태에 따라 자동 변경</div>
+                        <div>• 실시간 애니메이션: 자동 움직임 효과</div>
+                      </div>
+                    </div>
+                    
+                    <div className="bg-gradient-to-r from-green-50 to-blue-50 rounded-lg p-3">
+                      <div className="text-sm font-medium text-gray-900 mb-2">🌧️ 비 시각화 설명</div>
+                      <div className="space-y-1 text-xs text-gray-700">
+                        <div>• 이슬비: 연한 파란색 직선</div>
+                        <div>• 보통비: 중간 진하기의 파란색 직선</div>
+                        <div>• 폭우: 진한 파란색 직선, 더 많은 수량</div>
+                        <div>• 낙하 속도: 실제 비와 비슷한 속도</div>
+                      </div>
+                    </div>
+                    
+                    <div className="bg-gradient-to-r from-gray-50 to-blue-50 rounded-lg p-3">
+                      <div className="text-sm font-medium text-gray-900 mb-2">☁️ 구름 시각화 설명</div>
+                      <div className="space-y-1 text-xs text-gray-700">
+                        <div>• 맑은 날: 밝은 회색 연한 구름</div>
+                        <div>• 흐린 날: 진한 회색 두꺼운 구름</div>
+                        <div>• 비오는 날: 파란빛 도는 구름</div>
+                        <div>• 그라데이션: 중심에서 가장자리로 자연스럽게 학어짐</div>
                       </div>
                     </div>
 
-                    <div className="bg-gray-50 rounded-lg p-3">
+                    <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg p-3">
                       <div className="text-sm font-medium text-gray-900 mb-2">🎮 조작 방법</div>
                       <div className="space-y-1 text-xs text-gray-700">
                         <div>• 마우스 드래그: 화면 이동</div>
-                        <div>• 스크롤: 줌 인/아웃</div>
+                        <div>• 스크롤: 줌 인/아웃 (비와 구름 파티클 확인)</div>
                         <div>• Shift + 드래그: 회전</div>
                         <div>• 더블클릭: 줌 인</div>
+                        <div>• 줄 11+ : 3D 날씨 효과 활성화</div>
                       </div>
                     </div>
                   </div>
@@ -801,8 +822,8 @@ export default function WeatherVisualization() {
         </div>
       </div>
 
-      {/* Weather Summary Card - Hidden on mobile when panel is open */}
-      {!isCollapsed && (
+      {/* Weather Summary Card - Only when no particles visible */}
+      {!isCollapsed && viewState.zoom < 11 && (
         <div className="absolute top-20 right-4 z-10 bg-white/95 backdrop-blur-sm rounded-lg shadow-lg border border-gray-200 p-3 sm:p-4 w-48 sm:w-64 hidden md:block">
           <div className="text-sm font-medium text-gray-900 mb-2">실시간 날씨 현황</div>
           <div className="space-y-2">
@@ -826,6 +847,11 @@ export default function WeatherVisualization() {
                 평균 강수량: {(weatherStations.reduce((sum, s) => sum + s.weather.precipitation, 0) / weatherStations.length).toFixed(1)}mm/h
               </div>
             </div>
+            <div className="border-t border-gray-200 pt-2 mt-2">
+              <div className="text-xs text-blue-600 font-medium">
+                줌인하여 3D 날씨 효과를 확인하세요!
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -839,6 +865,87 @@ export default function WeatherVisualization() {
           {isCollapsed ? '📍' : '✕'}
         </button>
       </div>
+
+      {/* Weather Visualization Guide */}
+      {!isCollapsed && viewState.zoom >= 11 && (
+        <div className="absolute top-20 right-4 z-10 bg-white/95 backdrop-blur-sm rounded-lg shadow-lg border border-gray-200 p-3 sm:p-4 w-56 sm:w-72 hidden md:block">
+          <div className="text-sm font-medium text-gray-900 mb-3 flex items-center gap-2">
+            <span>🌧️</span>
+3D 날씨 효과 가이드
+          </div>
+          
+          {/* Cloud Legend */}
+          <div className="mb-4">
+            <div className="text-xs font-medium text-gray-700 mb-2 flex items-center gap-1">
+              <span>☁️</span>
+              구름 효과
+            </div>
+            <div className="grid grid-cols-2 gap-1 text-xs">
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-gray-100 border"></div>
+                <span>맑음</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-gray-200 border"></div>
+                <span>구름조금</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-gray-300 border"></div>
+                <span>흐림</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-gray-400 border"></div>
+                <span>비구름</span>
+              </div>
+            </div>
+          </div>
+          
+          {/* Rain Legend */}
+          <div className="mb-4">
+            <div className="text-xs font-medium text-gray-700 mb-2 flex items-center gap-1">
+              <span>🌧️</span>
+              비 효과
+            </div>
+            <div className="space-y-1 text-xs">
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-1 bg-blue-200 rounded"></div>
+                <span>이슬비 (0-2mm)</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-1 bg-blue-400 rounded"></div>
+                <span>보통비 (2-10mm)</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-1 bg-blue-600 rounded"></div>
+                <span>폭우 (10mm+)</span>
+              </div>
+            </div>
+          </div>
+          
+          {/* Particle Count */}
+          <div className="mb-4 bg-blue-50 rounded-lg p-2">
+            <div className="text-xs font-medium text-blue-800 mb-1">현재 날씨 효과 수</div>
+            <div className="flex items-center justify-between text-xs">
+              <div className="flex items-center gap-1">
+                <span>☁️</span>
+                <span className="text-blue-700">구름: {cloudParticles.length}</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span>🌧️</span>
+                <span className="text-blue-700">비: {rainParticles.length}</span>
+              </div>
+            </div>
+          </div>
+          
+          {/* View Instructions */}
+          <div className="border-t border-gray-200 pt-3">
+            <div className="text-xs text-gray-600">
+              <div className="mb-1">• 구름: 높이 떠 있는 둥근 원형 모양</div>
+              <div>• 비: 수직으로 떨어지는 직선 모양</div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Region Navigation Overlay */}
       {isTransitioning && (

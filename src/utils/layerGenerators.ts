@@ -118,11 +118,7 @@ export const createCloudBaseLayer = (cloudParticles: CloudParticle[], zoom: numb
     getPosition: (d: any) => d.position,
     getFillColor: (d: any) => {
       const alpha = Math.floor(d.opacity * 255);
-      const color = [d.color[0], d.color[1], d.color[2], alpha];
-      if (Math.random() < 0.01) { // 1% 확률로 로그 출력
-        console.log('Cloud layer color:', color, 'original:', d.color);
-      }
-      return color;
+      return [d.color[0], d.color[1], d.color[2], alpha];
     },
     getRadius: (d: any) => {
       const zoomMultiplier = zoom >= 13 ? 1 + (zoom - 13) * 0.2 : 
@@ -149,9 +145,9 @@ export const createCloudBaseLayer = (cloudParticles: CloudParticle[], zoom: numb
     billboard: true,
     parameters: {
       depthTest: false
-      // 블렌딩 비활성화 (색상 확인용)
+      // 블렌딩 비활성화로 색상 유지
       // blend: true,
-      // blendFunc: [770, 771, 1, 771], // Additive blending for soft gradient
+      // blendFunc: [770, 771, 1, 771],
       // blendEquation: 32774
     }
   });
@@ -218,9 +214,9 @@ export const createCloudHighlightLayer = (cloudParticles: CloudParticle[], zoom:
     billboard: true,
     parameters: {
       depthTest: false
-      // 블렌딩 비활성화 (색상 확인용)
+      // 블렌딩 비활성화로 색상 유지
       // blend: true,
-      // blendFunc: [770, 1, 1, 1], // Screen blending for soft glow
+      // blendFunc: [770, 1, 1, 1],
       // blendEquation: 32774
     }
   });
