@@ -140,7 +140,7 @@ export const createCloudHighlightLayer = (cloudParticles: CloudParticle[], zoom:
   });
 };
 
-// Generate rain layer with viewport-based filtering
+// Generate rain layer with viewport-based filtering and zoom-responsive sizing
 export const createRainLayer = (
   rainParticles: RainParticle[], 
   viewState?: { longitude: number; latitude: number; zoom: number }
@@ -167,11 +167,12 @@ export const createRainLayer = (
     data: filteredParticles,
     getPosition: (d: RainParticle) => d.position,
     getFillColor: [60, 100, 220, 240], // 더 진한 파란색 빗방울
-    getRadius: (d: RainParticle) => d.size, // 원래 크기
+    getRadius: (d: RainParticle) => d.size, // 원래 크기 사용
     radiusUnits: 'meters',
     opacity: 1.0,
+    // 비다운 작은 크기로 고정
     radiusMinPixels: 1,
-    radiusMaxPixels: 8,
+    radiusMaxPixels: 3, // 매우 작게 유지
     stroked: false,
     filled: true,
     antialiasing: true,
@@ -249,34 +250,33 @@ export const createWeatherColumnLayer = (
       console.log(`Station ${d.station.name}: precipitation=${precipitation}, height=${height}`);
       return height;
     },
-    getFillColor: (d: { station: WeatherStation }) => {
+    getFillColor: (d: { station: WeatherStation }): [number, number, number, number] => {
       const precipitation = d.station.weather.precipitation;
       const cloudCoverage = d.station.weather.cloudCoverage;
       
-      let color;
       // 현재 UI 색상 체계에 맞춘 색상 (지면 레이어와 유사한 색역)
       if (precipitation > 20) {
         // 폭우 - 진한 파랑 (강수 강도에 따라)
         const intensity = Math.min(precipitation / 30, 1);
-        color = [30, 80, 180, Math.max(180, 200 + intensity * 55)];
+        const alpha = Math.max(180, 200 + intensity * 55);
+        return [30, 80, 180, alpha];
       } else if (precipitation > 10) {
         // 비 - 중간 파랑
         const intensity = Math.min(precipitation / 20, 1);
-        color = [50, 100, 200, Math.max(160, 180 + intensity * 75)];
+        const alpha = Math.max(160, 180 + intensity * 75);
+        return [50, 100, 200, alpha];
       } else if (precipitation > 1) {
         // 약한 비 - 연한 파랑
         const intensity = Math.min(precipitation / 10, 1);
-        color = [80, 130, 220, Math.max(140, 160 + intensity * 95)];
+        const alpha = Math.max(140, 160 + intensity * 95);
+        return [80, 130, 220, alpha];
       } else if (cloudCoverage > 50) {
         // 흐림 - 연한 회색 (UI의 회색과 유사)
-        color = [180, 180, 185, 160];
+        return [180, 180, 185, 160];
       } else {
         // 맑음 - 연한 노란색 (UI의 노란색과 유사)
-        color = [255, 255, 150, 180];
+        return [255, 255, 150, 180];
       }
-      
-      console.log(`Station ${d.station.name}: precip=${precipitation}, cloud=${cloudCoverage}, color=${color}`);
-      return color;
     },
     getLineColor: [120, 120, 130, 220], // 더 부드러운 테두리
     getRadius: (d: { station: WeatherStation; area: number }) => {

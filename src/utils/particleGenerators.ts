@@ -162,38 +162,14 @@ export const generateRainParticles = (
     const weatherState = getWeatherState(station.weather.precipitation, station.weather.cloudCoverage);
     
     if (station.weather.precipitation > 0) {
-      // Calculate distance from viewport center for optimization
-      let distanceMultiplier = 1.0;
-      let zoomMultiplier = 1.0;
-      
-      if (viewState) {
-        // Distance-based optimization
-        const distanceFromCenter = Math.sqrt(
-          Math.pow(station.location.longitude - viewState.longitude, 2) +
-          Math.pow(station.location.latitude - viewState.latitude, 2)
-        );
-        
-        // Reduce particles for distant areas (beyond ~0.05 degrees)
-        if (distanceFromCenter > 0.05) {
-          distanceMultiplier = Math.max(0.3, 1 - (distanceFromCenter - 0.05) * 5);
-        }
-        
-        // Zoom-based density increase
-        if (viewState.zoom >= 13) {
-          zoomMultiplier = 1 + (viewState.zoom - 13) * 0.5; // 50% more per zoom level
-        } else if (viewState.zoom >= 11) {
-          zoomMultiplier = 0.5 + (viewState.zoom - 11) * 0.25; // Gradual increase
-        } else {
-          zoomMultiplier = 0.2; // Very few particles at overview
-        }
-      }
-      
-      // 강수량에 비례한 빗방울 수 (날씨 상태에 따라 조정, 거리/줌 최적화 제거)
-      const baseCount = station.weather.precipitation * 35; // 더 많은 기본 파티클
-      const stateMultiplier = weatherState.id === 'heavy_rain' ? 2.5 :
-                             weatherState.id === 'rainy' ? 1.8 :
-                             weatherState.id === 'cloudy' ? 1.3 : 1.0;
-      const particleCount = Math.floor(baseCount * stateMultiplier); // 거리/줌 조정 제거
+      // 강수량에 비례한 빗방울 수 (날씨 상태에 따라 조정)
+      // 줌 레벨이 높을수록 더 많은 파티클로 밀도감 증가
+      const zoomMultiplier = viewState && viewState.zoom > 13 ? 1 + (viewState.zoom - 13) * 0.3 : 1;
+      const baseCount = station.weather.precipitation * 40 * zoomMultiplier; 
+      const stateMultiplier = weatherState.id === 'heavy_rain' ? 3.0 :
+                             weatherState.id === 'rainy' ? 2.2 :
+                             weatherState.id === 'cloudy' ? 1.5 : 1.0;
+      const particleCount = Math.floor(baseCount * stateMultiplier);
       
       // 해당 구의 모든 동 features 찾기
       const districtFeatures = geoJSON.features.filter((f: SeoulDistrictFeature) => f.properties.sggnm === station.name);
@@ -259,13 +235,13 @@ const generateSingleRainParticle = (
   // 구름의 최소 고도보다 낮게 설정 (구름: 1800-2600m, 비: 300-1500m)
   const startHeight = 300 + Math.random() * 1200;
   
-  // 날씨 상태에 따른 비 속도와 크기 조정
-  const velocity = weatherState.id === 'heavy_rain' ? -25 - Math.random() * 15 :
-                  weatherState.id === 'rainy' ? -20 - Math.random() * 10 :
-                  -15 - Math.random() * 8;
-  const rainSize = weatherState.id === 'heavy_rain' ? 1.5 + Math.random() * 2 :
-                  weatherState.id === 'rainy' ? 1.0 + Math.random() * 1.5 :
-                  0.5 + Math.random() * 1;
+  // 날씨 상태에 따른 비 속도 조정 (더 빠르게)
+  const velocity = weatherState.id === 'heavy_rain' ? -35 - Math.random() * 20 :
+                  weatherState.id === 'rainy' ? -25 - Math.random() * 15 :
+                  -20 - Math.random() * 10;
+  const rainSize = weatherState.id === 'heavy_rain' ? 1.5 + Math.random() * 1 :    // 1.5-2.5m
+                  weatherState.id === 'rainy' ? 1 + Math.random() * 0.5 :        // 1-1.5m
+                  0.5 + Math.random() * 0.5;                                    // 0.5-1m
   
   return {
     id: `rain-${particleId}`,

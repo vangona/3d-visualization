@@ -78,38 +78,36 @@ export default function WeatherVisualization() {
 
   // Animation loop for rain particles
   useEffect(() => {
+    let frameCount = 0;
+    
     const animate = () => {
       setAnimationFrame(prev => prev + 1);
+      frameCount++;
       
       // Update rain particles
       setRainParticles(prevParticles => {
+        if (prevParticles.length === 0) {
+          console.log('Warning: No rain particles to animate');
+        }
+        
+        // Log particle count every 100 frames (5 seconds)
+        if (frameCount % 100 === 0) {
+          console.log(`Rain particles count: ${prevParticles.length}`);
+        }
+        
         return prevParticles.map(particle => {
           const newAltitude = particle.position[2] + particle.velocity[2];
           
-          // 땅에 닿으면 재생성
+          // 땅에 닿으면 항상 재생성 (파티클 수 유지)
           if (newAltitude < 0) {
-            // 뷰포트 중심에서 거리 계산
-            const distanceFromCenter = Math.sqrt(
-              Math.pow(particle.position[0] - viewState.longitude, 2) +
-              Math.pow(particle.position[1] - viewState.latitude, 2)
-            );
-            
-            // 중심에서 멀리 떨어진 파티클은 재생성 확률 감소
-            const regenerationChance = distanceFromCenter > 0.05 ? 0.3 : 1.0;
-            
-            if (Math.random() < regenerationChance) {
-              return {
-                ...particle,
-                position: [
-                  particle.position[0],
-                  particle.position[1],
-                  300 + Math.random() * 1200, // 구름보다 낮은 고도에서 재생성
-                ] as [number, number, number],
-              };
-            } else {
-              // 재생성하지 않고 제거 (필터링됨)
-              return null;
-            }
+            return {
+              ...particle,
+              position: [
+                particle.position[0],
+                particle.position[1],
+                300 + Math.random() * 1200, // 구름보다 낮은 고도에서 재생성
+              ] as [number, number, number],
+            };
           }
           
           return {
@@ -120,7 +118,7 @@ export default function WeatherVisualization() {
               newAltitude,
             ] as [number, number, number],
           };
-        }).filter(particle => particle !== null) as RainParticle[];
+        });
       });
     };
 
