@@ -74,7 +74,7 @@ export const createDistrictRainLayer = (
 // Generate cloud base layer with multiple overlapping circles for gradient effect
 export const createCloudBaseLayer = (cloudParticles: CloudParticle[], zoom: number = 11) => {
   // Create multiple layers of the same particles with different sizes and opacities
-  const layeredParticles = [];
+  const layeredParticles: (CloudParticle & { id: string, layerType: string, opacity: number })[] = [];
   
   cloudParticles.forEach((particle, index) => {
     // Create 3 layers for each particle to simulate gradient
@@ -147,7 +147,7 @@ export const createCloudBaseLayer = (cloudParticles: CloudParticle[], zoom: numb
 // Generate cloud highlight layer with soft glow effect
 export const createCloudHighlightLayer = (cloudParticles: CloudParticle[], zoom: number = 11) => {
   // Create soft glow particles with gradient effect
-  const glowParticles = [];
+  const glowParticles: (CloudParticle & { id: string, layerType: string, opacity: number })[] = [];
   
   cloudParticles.filter((_, index) => index % 2 === 0).forEach((particle, index) => {
     // Outer glow (largest, very transparent)
