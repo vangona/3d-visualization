@@ -2,6 +2,15 @@ import { GeoJsonLayer, ScatterplotLayer, ColumnLayer, LineLayer } from '@deck.gl
 import { WeatherStation, CloudParticle, RainParticle } from '@/types/weather';
 import { SeoulGeoJSON, SeoulDistrictFeature } from '@/data/seoul-geojson-loader';
 
+// Define rain line data type for better type safety
+interface RainLineData {
+  sourcePosition: [number, number, number];
+  targetPosition: [number, number, number];
+  intensity: number;
+  speed: number;
+  id: string;
+}
+
 // Generate district layer (all districts with weather-based coloring)
 export const createDistrictRainLayer = (
   weatherStations: WeatherStation[], 
@@ -140,7 +149,7 @@ export const createCloudHighlightLayer = (cloudParticles: CloudParticle[], zoom:
   });
 };
 
-// Generate realistic rain layer using LineLayer for streak effect
+// Generate realistic rain layer using LineLayer with proper error handling
 export const createRainLayer = (
   rainParticles: RainParticle[], 
   viewState?: { longitude: number; latitude: number; zoom: number }
@@ -162,78 +171,85 @@ export const createRainLayer = (
     console.log('Showing all rain particles:', rainParticles.length, 'at zoom:', viewState?.zoom);
   }
 
-  // Convert rain particles to line segments for realistic rain streaks
-  const rainLines = filteredParticles.map((particle, index) => {
-    const [lon, lat, altitude] = particle.position;
-    
-    // Calculate rain streak length based on falling speed and intensity
-    const streakLength = Math.abs(particle.velocity[2]) * 8; // Moderate streak length
-    const bottomAltitude = Math.max(0, altitude - streakLength);
-    
-    // Perfectly vertical rain - no wind effects
-    return {
-      sourcePosition: [lon, lat, altitude],
-      targetPosition: [lon, lat, bottomAltitude], // Completely vertical drop
-      intensity: particle.size / 15,
-      speed: Math.abs(particle.velocity[2]),
-      particleId: index
-    };
-  });
+  // Safety check for empty data
+  if (!filteredParticles || filteredParticles.length === 0) {
+    console.log('No rain particles to display');
+    return null;
+  }
 
-  // Zoom-responsive line width for better visibility
-  const currentZoom = viewState?.zoom || 11;
-  const baseWidth = currentZoom >= 14 ? 1.5 : currentZoom >= 12 ? 1.0 : 0.8;
-  
-  return new LineLayer({
-    id: 'rain-streaks',
-    data: rainLines,
-    getSourcePosition: (d: any) => d.sourcePosition,
-    getTargetPosition: (d: any) => d.targetPosition,
-    
-    // Natural rain color with realistic transparency
-    getColor: (d: any) => {
-      // More realistic rain coloring - silvery-blue with transparency
-      const intensity = Math.min(d.intensity * 1.5, 1);
-      const speed = Math.min(d.speed / 10, 1); // Normalize speed
+  try {
+    // Convert particles to line segments for vertical rain streaks
+    const rainLines: RainLineData[] = filteredParticles.map((particle, index) => {
+      const [lon, lat, altitude] = particle.position;
       
-      // Faster/heavier rain = more visible (less transparent)
-      const alpha = Math.floor(80 + (intensity + speed) * 80); // 80-240 alpha range
+      // Vertical rain streak - longer for heavier rain
+      const streakLength = Math.abs(particle.velocity[2]) * 6; // Moderate length
+      const bottomAltitude = Math.max(0, altitude - streakLength);
       
-      // Subtle blue-gray rain color, not too saturated
-      const r = Math.floor(120 + intensity * 40); // 120-160
-      const g = Math.floor(140 + intensity * 50); // 140-190  
-      const b = Math.floor(180 + intensity * 60); // 180-240
+      return {
+        sourcePosition: [lon, lat, altitude],
+        targetPosition: [lon, lat, bottomAltitude], // Perfectly vertical
+        intensity: particle.size / 15,
+        speed: Math.abs(particle.velocity[2]),
+        id: `rain-${index}` // Add unique ID for stability
+      };
+    });
+
+    // Zoom-responsive line width
+    const currentZoom = viewState?.zoom || 11;
+    const baseWidth = currentZoom >= 14 ? 1.2 : currentZoom >= 12 ? 0.8 : 0.6;
+    
+    return new LineLayer<RainLineData>({
+      id: 'rain-lines-stable',
+      data: rainLines,
       
-      return [r, g, b, alpha];
-    },
+      // Position accessors
+      getSourcePosition: (d: RainLineData) => d.sourcePosition,
+      getTargetPosition: (d: RainLineData) => d.targetPosition,
+      
+      // Rain appearance
+      getColor: (d: RainLineData) => {
+        const intensity = Math.min(d.intensity * 1.2, 1);
+        const alpha = Math.floor(100 + intensity * 100); // 100-200 alpha
+        
+        // Natural rain color
+        return [110, 140, 180, alpha];
+      },
+      
+      // Line properties
+      getWidth: (d: RainLineData) => baseWidth * (0.8 + d.intensity * 0.4),
+      widthUnits: 'pixels',
+      widthMinPixels: 0.5,
+      widthMaxPixels: 2.5,
+      
+      // Stability settings
+      pickable: false,
+      autoHighlight: false,
+      
+      // Update triggers to prevent state transfer errors
+      updateTriggers: {
+        getSourcePosition: [filteredParticles.length],
+        getTargetPosition: [filteredParticles.length],
+        getColor: [currentZoom],
+        getWidth: [currentZoom]
+      }
+    });
     
-    // Dynamic line width based on rain intensity and zoom
-    getWidth: (d: any) => baseWidth * (0.5 + d.intensity),
-    widthUnits: 'pixels',
-    widthMinPixels: 0.5,
-    widthMaxPixels: currentZoom >= 14 ? 3 : 2,
+  } catch (error) {
+    console.error('Error creating rain LineLayer, falling back to ScatterplotLayer:', error);
     
-    // Realistic rain line rendering
-    lineJointRounded: false, // Sharp for more rain-like appearance  
-    lineCapRounded: true,    // Rounded caps for natural ends
-    
-    // Force vertical orientation in 3D space
-    coordinateSystem: 'LNGLAT',
-    
-    // Optimized blending for realistic rain transparency
-    parameters: {
-      blend: true,
-      blendFunc: [0x0302, 0x0303], // SRC_ALPHA, ONE_MINUS_SRC_ALPHA
-      blendEquation: 0x8006, // FUNC_ADD
-      depthTest: true,
-      depthMask: false, // Allow transparency layering
-    },
-    
-    // Performance optimizations
-    pickable: false, // Rain doesn't need to be interactive
-    autoHighlight: false,
-    highlightColor: [0, 0, 0, 0],
-  });
+    // Fallback to ScatterplotLayer if LineLayer fails
+    return new ScatterplotLayer({
+      id: 'rain-fallback',
+      data: filteredParticles,
+      getPosition: (d: RainParticle) => d.position,
+      getRadius: (d: RainParticle) => d.size * 1.5,
+      getFillColor: [110, 140, 180, 160],
+      radiusMinPixels: 1,
+      radiusMaxPixels: 3,
+      pickable: false
+    });
+  }
 };
 
 // Generate 3D column layer for overview visualization

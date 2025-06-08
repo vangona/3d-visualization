@@ -40,7 +40,7 @@ export default function WeatherVisualization() {
   const [cloudParticles, setCloudParticles] = useState<CloudParticle[]>([]);
   const [rainParticles, setRainParticles] = useState<RainParticle[]>([]);
   const [seoulGeoJSON, setSeoulGeoJSON] = useState<SeoulGeoJSON | null>(null);
-  const [dongData, setDongData] = useState<DongInfo[]>([]);
+  const [, setDongData] = useState<DongInfo[]>([]);
   const [, setAnimationFrame] = useState(0);
   const [tooltip, setTooltip] = useState<{ x: number; y: number; content: React.ReactNode } | null>(null);
   
@@ -80,26 +80,31 @@ export default function WeatherVisualization() {
 
   // Generate rain particles when weather data changes or significant zoom change
   const previousZoomRef = useRef(viewState.zoom);
+  const hasInitializedRef = useRef(false);
+  
   useEffect(() => {
     if (weatherStations.length > 0 && seoulGeoJSON) {
       const currentZoom = viewState.zoom;
       const previousZoom = previousZoomRef.current;
       
-      // Regenerate particles if zoom level crosses important thresholds or initial load
+      // Regenerate particles only on major zoom threshold changes
       const shouldRegenerate = 
-        rainParticles.length === 0 || // Initial load
-        (previousZoom < 13 && currentZoom >= 13) || // Entering detail view
-        (previousZoom >= 13 && currentZoom < 13) || // Leaving detail view
-        Math.abs(currentZoom - previousZoom) > 3; // Large zoom change
+        !hasInitializedRef.current || // Initial load
+        (previousZoom < 12 && currentZoom >= 12) || // Entering particle view
+        (previousZoom >= 12 && currentZoom < 12) || // Leaving particle view
+        (previousZoom < 14 && currentZoom >= 14) || // Entering high detail
+        (previousZoom >= 14 && currentZoom < 14) || // Leaving high detail
+        Math.abs(currentZoom - previousZoom) > 5; // Only on very large zoom changes
       
       if (shouldRegenerate) {
         console.log('Regenerating rain particles for zoom change:', previousZoom, '->', currentZoom);
         const newRainParticles = generateRainParticles(weatherStations, seoulGeoJSON, viewState);
         setRainParticles(newRainParticles);
         previousZoomRef.current = currentZoom;
+        hasInitializedRef.current = true;
       }
     }
-  }, [weatherStations, seoulGeoJSON, viewState.zoom, rainParticles.length]);
+  }, [weatherStations, seoulGeoJSON, viewState.zoom]); // Remove rainParticles.length dependency
 
   // Animation loop for rain particles
   useEffect(() => {
@@ -169,9 +174,15 @@ export default function WeatherVisualization() {
     return new LightingEffect({ ambientLight, directionalLight });
   })();
 
+  // Smoothed zoom for layer generation to prevent stuttering
+  const smoothedZoom = useMemo(() => {
+    // Use smaller rounding intervals for smoother transitions
+    return Math.round(viewState.zoom * 4) / 4; // 0.25 intervals instead of 0.5
+  }, [viewState.zoom]);
+
   const layers = useMemo(() => {
     const layerList = [];
-    const currentZoom = viewState.zoom;
+    const currentZoom = smoothedZoom;
 
     console.log('Creating layers for zoom level:', currentZoom, 'selectedLayer:', selectedLayer);
 
@@ -232,7 +243,7 @@ export default function WeatherVisualization() {
     seoulGeoJSON,
     cloudParticles,
     rainParticles,
-    viewState.zoom,
+    smoothedZoom, // Use smoothed zoom instead of raw zoom
     viewState.longitude,
     viewState.latitude,
     selectedLayer
@@ -388,14 +399,14 @@ export default function WeatherVisualization() {
     );
   }, [weatherStations, searchQuery]);
 
-  // Group dong data by gu for organized display
-  const dongsByGu = dongData.reduce((acc, dong) => {
-    if (!acc[dong.guName]) {
-      acc[dong.guName] = [];
-    }
-    acc[dong.guName].push(dong);
-    return acc;
-  }, {} as Record<string, DongInfo[]>);
+  // Group dong data by gu for organized display (currently unused)
+  // const dongsByGu = dongData.reduce((acc, dong) => {
+  //   if (!acc[dong.guName]) {
+  //     acc[dong.guName] = [];
+  //   }
+  //   acc[dong.guName].push(dong);
+  //   return acc;
+  // }, {} as Record<string, DongInfo[]>);
 
   return (
     <div className="relative w-full h-screen">
@@ -832,7 +843,7 @@ export default function WeatherVisualization() {
           touchZoom: true,
           touchRotate: true,
           keyboard: true,
-          scrollZoom: { speed: 0.01, smooth: true },
+          scrollZoom: { speed: 0.03, smooth: true }, // Faster, responsive zoom
           inertia: true,
         }}
         layers={layers}
