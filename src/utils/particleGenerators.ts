@@ -7,7 +7,12 @@ import { SeoulGeoJSON, SeoulDistrictFeature } from '@/data/seoul-geojson-loader'
 export const generateCloudParticles = (stations: WeatherStation[], geoJSON: SeoulGeoJSON | null): CloudParticle[] => {
   const particles: CloudParticle[] = [];
   
-  if (!geoJSON) return particles;
+  if (!geoJSON) {
+    console.log('No GeoJSON data for cloud particles');
+    return particles;
+  }
+  
+  console.log('Generating cloud particles for', stations.length, 'stations');
   
   
   stations.forEach((station) => {
@@ -75,6 +80,7 @@ export const generateCloudParticles = (stations: WeatherStation[], geoJSON: Seou
     }
   });
   
+  console.log('Generated', particles.length, 'cloud particles');
   return particles;
 };
 
@@ -139,7 +145,12 @@ export const generateRainParticles = (stations: WeatherStation[], geoJSON: Seoul
   const particles: RainParticle[] = [];
   let particleId = 0;
   
-  if (!geoJSON) return particles;
+  if (!geoJSON) {
+    console.log('No GeoJSON data for rain particles');
+    return particles;
+  }
+  
+  console.log('Generating rain particles for', stations.length, 'stations');
   
   stations.forEach((station) => {
     // Get weather state and color configuration
@@ -179,6 +190,7 @@ export const generateRainParticles = (stations: WeatherStation[], geoJSON: Seoul
     }
   });
   
+  console.log('Generated', particles.length, 'rain particles');
   return particles;
 };
 

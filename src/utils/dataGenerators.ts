@@ -5,7 +5,7 @@ import { SeoulGeoJSON } from '@/data/seoul-geojson-loader';
 
 // Mock weather stations data for Seoul - All 25 districts
 export const generateMockWeatherStations = (): WeatherStation[] => {
-  return SEOUL_DISTRICTS.map((district, index) => {
+  const stations = SEOUL_DISTRICTS.map((district, index) => {
     const scenario = WEATHER_SCENARIOS[index % WEATHER_SCENARIOS.length];
     return {
       id: `station-${index}`,
@@ -26,6 +26,14 @@ export const generateMockWeatherStations = (): WeatherStation[] => {
       },
     };
   });
+  
+  console.log('Generated weather stations:', stations.map(s => ({
+    name: s.name,
+    precipitation: s.weather.precipitation,
+    cloudCoverage: s.weather.cloudCoverage
+  })));
+  
+  return stations;
 };
 
 // Generate dong data from GeoJSON and associate with gu weather stations
@@ -33,6 +41,7 @@ export const generateDongData = (geoJSON: SeoulGeoJSON | null, weatherStations: 
   if (!geoJSON) return [];
   
   const dongList: DongInfo[] = [];
+  const unmatchedGus = new Set<string>();
   
   geoJSON.features.forEach((feature) => {
     const fullName = feature.properties.adm_nm;
@@ -44,7 +53,10 @@ export const generateDongData = (geoJSON: SeoulGeoJSON | null, weatherStations: 
     
     // Find corresponding weather station for this gu
     const guWeatherStation = weatherStations.find(station => station.name === guName);
-    if (!guWeatherStation) return;
+    if (!guWeatherStation) {
+      unmatchedGus.add(guName);
+      return;
+    }
     
     // Calculate centroid of the dong
     try {
@@ -66,5 +78,10 @@ export const generateDongData = (geoJSON: SeoulGeoJSON | null, weatherStations: 
     }
   });
   
+  // 디버깅: 매칭되지 않은 구들 로그
+  if (unmatchedGus.size > 0) {
+    console.warn('Unmatched districts in GeoJSON:', Array.from(unmatchedGus));
+  }
+    
   return dongList;
 };

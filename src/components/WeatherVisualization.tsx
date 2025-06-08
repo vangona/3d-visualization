@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { DeckGL } from '@deck.gl/react';
 import { 
   MapViewState, 
@@ -15,7 +15,7 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 import { SeoulGeoJSON } from '@/data/seoul-geojson-loader';
 
 // Import types
-import { WeatherStation, CloudParticle, RainParticle, DongInfo } from '@/types/weather';
+import { CloudParticle, RainParticle, DongInfo } from '@/types/weather';
 
 // Import constants
 import { WEATHER_STATES } from '@/constants/weather';
@@ -30,12 +30,12 @@ export default function WeatherVisualization() {
   const [viewState, setViewState] = useState<MapViewState>({
     longitude: 126.9780,  // 서울시청
     latitude: 37.5665,
-    zoom: 10.5,
-    pitch: 45,
+    zoom: 11,
+    pitch: 0, // 위에서 내려다보는 각도로 테스트
     bearing: 0,
   });
 
-  const [weatherStations] = useState<WeatherStation[]>(generateMockWeatherStations());
+  const weatherStations = useMemo(() => generateMockWeatherStations(), []);
   const [cloudParticles, setCloudParticles] = useState<CloudParticle[]>([]);
   const [rainParticles, setRainParticles] = useState<RainParticle[]>([]);
   const [seoulGeoJSON, setSeoulGeoJSON] = useState<SeoulGeoJSON | null>(null);
@@ -58,10 +58,22 @@ export default function WeatherVisualization() {
     }
   }, [seoulGeoJSON, weatherStations]);
 
-  // Generate cloud and rain particles
+  // Generate cloud particles with useMemo for better performance
+  const cloudParticlesMemo = useMemo(() => {
+    return generateCloudParticles(weatherStations, seoulGeoJSON);
+  }, [weatherStations, seoulGeoJSON]);
+
+  // Update cloud particles when memoized particles change
   useEffect(() => {
-    setCloudParticles(generateCloudParticles(weatherStations, seoulGeoJSON));
-    setRainParticles(generateRainParticles(weatherStations, seoulGeoJSON ?? { features: [], type: 'FeatureCollection' }));
+    setCloudParticles(cloudParticlesMemo);
+  }, [cloudParticlesMemo]);
+
+  // Generate initial rain particles when weather data changes
+  useEffect(() => {
+    if (weatherStations.length > 0 && seoulGeoJSON) {
+      const initialRainParticles = generateRainParticles(weatherStations, seoulGeoJSON);
+      setRainParticles(initialRainParticles);
+    }
   }, [weatherStations, seoulGeoJSON]);
 
   // Animation loop for rain particles
@@ -124,28 +136,32 @@ export default function WeatherVisualization() {
     return new LightingEffect({ ambientLight, directionalLight });
   })();
 
-  const getLayers = useCallback(() => {
-    const layers = [];
-
-    // District rain area layer
-    const districtRainLayer = createDistrictRainLayer(weatherStations, seoulGeoJSON);
-    if (districtRainLayer) {
-      layers.push(districtRainLayer);
+  const layers = useMemo(() => {
+    const layerList = [];
+    // District area layer (all districts with weather-based coloring)
+    const districtLayer = createDistrictRainLayer(weatherStations, seoulGeoJSON);
+    if (districtLayer) {
+      layerList.push(districtLayer);
     }
 
     // Cloud layers
     if (cloudParticles.length > 0) {
-      layers.push(createCloudBaseLayer(cloudParticles));
-      layers.push(createCloudHighlightLayer(cloudParticles));
+      layerList.push(createCloudBaseLayer(cloudParticles));
+      layerList.push(createCloudHighlightLayer(cloudParticles));
     }
 
     // Rain layer
     if (rainParticles.length > 0) {
-      layers.push(createRainLayer(rainParticles));
+      layerList.push(createRainLayer(rainParticles));
     }
 
-    return layers;
-  }, [weatherStations, cloudParticles, rainParticles, seoulGeoJSON]);
+    return layerList;
+  }, [
+    weatherStations, 
+    seoulGeoJSON,
+    cloudParticles,
+    rainParticles,
+  ]);
 
   const handleHover = useCallback(({ x, y, object }: PickingInfo) => {
     if (object && 'properties' in object && 'precipitation' in object.properties) {
@@ -275,10 +291,10 @@ export default function WeatherVisualization() {
 
         <div className="text-xs text-gray-600">
           <p className="mb-2">🎨 5단계 날씨 상태별 효과 차별화</p>
+          <p className="mb-2">🗺️ 구역: 비오는 곳(파란색), 맑은 곳(노란색)</p>
           <p className="mb-2">☁️ 구름: 날씨에 따라 구름의 양(밀도)이 변화</p>
           <p className="mb-2">🌧️ 비: 속도/크기/밀도가 강수량에 비례</p>
-          <p className="mb-2">💡 조명: 날씨 상태별 밝기 자동 조정</p>
-          <p>🗺️ 지도: 전체적인 분위기가 날씨를 반영</p>
+          <p>💡 조명: 날씨 상태별 밝기 자동 조정</p>
         </div>
       </div>
 
@@ -299,7 +315,7 @@ export default function WeatherVisualization() {
           scrollZoom: { speed: 0.01, smooth: true },
           inertia: true,
         }}
-        layers={getLayers()}
+        layers={layers}
         effects={[lightingEffect]}
         onHover={handleHover}
       >

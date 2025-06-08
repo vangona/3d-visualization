@@ -2,53 +2,72 @@ import { GeoJsonLayer, ScatterplotLayer } from '@deck.gl/layers';
 import { WeatherStation, CloudParticle, RainParticle } from '@/types/weather';
 import { SeoulGeoJSON, SeoulDistrictFeature } from '@/data/seoul-geojson-loader';
 
-// Generate district rain area layer
+// Generate district layer (all districts with weather-based coloring)
 export const createDistrictRainLayer = (
   weatherStations: WeatherStation[], 
   seoulGeoJSON: SeoulGeoJSON | null
 ) => {
-  const rainingDistricts = weatherStations.filter(station => station.weather.precipitation > 0);
+  console.log('Creating district layer:', {
+    totalStations: weatherStations.length,
+    hasGeoJSON: !!seoulGeoJSON
+  });
   
-  if (rainingDistricts.length === 0 || !seoulGeoJSON) {
+  if (!seoulGeoJSON) {
+    console.log('District layer not created - no GeoJSON');
     return null;
   }
 
-  // 비가 오는 구역만 필터링한 GeoJSON 생성 (sggnm 속성 사용)
-  const filteredFeatures = seoulGeoJSON.features.filter((feature: SeoulDistrictFeature) => 
-    rainingDistricts.some(station => station.name === feature.properties.sggnm)
-  );
-
-  const rainingGeoJSON = {
+  // 모든 구역을 표시하되, weather station 정보를 매칭
+  const enhancedGeoJSON = {
     type: "FeatureCollection" as const,
-    features: filteredFeatures.map((feature: SeoulDistrictFeature) => {
-      const station = rainingDistricts.find(s => s.name === feature.properties.sggnm);
+    features: seoulGeoJSON.features.map((feature: SeoulDistrictFeature) => {
+      // 해당 구의 weather station 찾기
+      const station = weatherStations.find(s => s.name === feature.properties.sggnm);
       return {
         ...feature,
         type: "Feature" as const,
         properties: {
           ...feature.properties,
-          precipitation: station?.weather.precipitation || 0
+          precipitation: station?.weather.precipitation || 0,
+          cloudCoverage: station?.weather.cloudCoverage || 0,
+          hasWeatherData: !!station
         }
       };
     })
   };
+  
+  console.log('Enhanced GeoJSON features:', enhancedGeoJSON.features.length);
+  console.log('Features with weather data:', enhancedGeoJSON.features.filter(f => f.properties.hasWeatherData).length);
 
   return new GeoJsonLayer({
-    id: 'district-rain-areas',
-    data: rainingGeoJSON,
-    getFillColor: (f: { properties: { precipitation: number } }) => {
-      // 강수량에 따른 색상과 투명도
-      const intensity = Math.min(f.properties.precipitation / 30, 1);
-      return [50, 100, 200, intensity * 80]; // 파란색, 투명도는 강수량에 비례
+    id: 'district-areas',
+    data: enhancedGeoJSON,
+    getFillColor: (f: { properties: { precipitation: number; hasWeatherData: boolean } }) => {
+      if (!f.properties.hasWeatherData) {
+        // Weather 데이터가 없는 구역은 연한 회색
+        return [200, 200, 200, 30];
+      }
+      
+      if (f.properties.precipitation > 0) {
+        // 비가 오는 구역은 파란색 (강수량에 따라 진하기 조절)
+        const intensity = Math.min(f.properties.precipitation / 30, 1);
+        return [50, 100, 200, Math.max(50, intensity * 120)];
+      } else {
+        // 맑은 구역은 연한 노란색
+        return [255, 255, 150, 40];
+      }
     },
-    getLineColor: [80, 120, 200, 150],
-    getLineWidth: 20,
-    lineWidthMinPixels: 2,
-    lineWidthMaxPixels: 5,
+    getLineColor: [100, 100, 100, 180], // 회색 테두리
+    getLineWidth: 50,
+    lineWidthMinPixels: 1,
+    lineWidthMaxPixels: 3,
     pickable: true,
     stroked: true,
     filled: true,
     extruded: false,
+    opacity: 1.0,
+    wireframe: false,
+    getElevation: 0
   });
 };
 
