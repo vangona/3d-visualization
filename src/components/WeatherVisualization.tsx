@@ -126,34 +126,24 @@ export default function WeatherVisualization() {
         Math.abs(currentZoom - previousZoom) > 5; // Only on very large zoom changes
       
       if (shouldRegenerate) {
-        console.log('Regenerating rain particles for zoom change:', previousZoom, '->', currentZoom);
         const newRainParticles = generateRainParticles(weatherStations, seoulGeoJSON, viewState);
         setRainParticles(newRainParticles);
         previousZoomRef.current = currentZoom;
         hasInitializedRef.current = true;
       }
     }
-  }, [weatherStations, seoulGeoJSON, viewState.zoom]); // Remove rainParticles.length dependency
+  }, [weatherStations, seoulGeoJSON, viewState]); // Include full viewState dependency
 
-  // Animation loop for rain particles
+  // Animation loop for rain particles with visibility optimization
   useEffect(() => {
-    let frameCount = 0;
-    
     const animate = () => {
+      // Skip animation if page is not visible for performance
+      if (document.hidden) return;
+      
       setAnimationFrame(prev => prev + 1);
-      frameCount++;
       
       // Update rain particles
       setRainParticles(prevParticles => {
-        if (prevParticles.length === 0) {
-          console.log('Warning: No rain particles to animate');
-        }
-        
-        // Log particle count every 100 frames (5 seconds)
-        if (frameCount % 100 === 0) {
-          console.log(`Rain particles count: ${prevParticles.length}`);
-        }
-        
         return prevParticles.map(particle => {
           const newAltitude = particle.position[2] + particle.velocity[2];
           
@@ -181,8 +171,22 @@ export default function WeatherVisualization() {
       });
     };
 
-    const intervalId = setInterval(animate, 50); // 20fps for smooth animation
-    return () => clearInterval(intervalId);
+    // Use requestAnimationFrame for better performance and frame synchronization
+    let animationId: number;
+    let lastTime = 0;
+    const targetFPS = 30; // 30fps for optimal performance
+    const frameInterval = 1000 / targetFPS;
+    
+    const frameLoop = (currentTime: number) => {
+      if (currentTime - lastTime >= frameInterval) {
+        animate();
+        lastTime = currentTime;
+      }
+      animationId = requestAnimationFrame(frameLoop);
+    };
+    
+    animationId = requestAnimationFrame(frameLoop);
+    return () => cancelAnimationFrame(animationId);
   }, [weatherStations]);
 
   // Calculate lighting based on weather
@@ -213,14 +217,11 @@ export default function WeatherVisualization() {
     const layerList = [];
     const currentZoom = smoothedZoom;
 
-    console.log('Creating layers for zoom level:', currentZoom, 'selectedLayer:', selectedLayer);
-
     // Weather column layer for overview (zoom <= 11)
     if (selectedLayer === 'all' || selectedLayer === 'weather') {
       const columnLayer = createWeatherColumnLayer(weatherStations, seoulGeoJSON, currentZoom);
       if (columnLayer) {
         layerList.push(columnLayer);
-        console.log('Added weather column layer at zoom:', currentZoom);
       }
     }
 
@@ -229,7 +230,6 @@ export default function WeatherVisualization() {
       const districtLayer = createDistrictRainLayer(weatherStations, seoulGeoJSON);
       if (districtLayer) {
         layerList.push(districtLayer);
-        console.log('Added district layer');
       }
     }
 
@@ -242,7 +242,6 @@ export default function WeatherVisualization() {
       if (cloudParticles.length > 0 && particleOpacity > 0 && currentZoom < 16) {
         layerList.push(createCloudBaseLayer(cloudParticles, currentZoom));
         layerList.push(createCloudHighlightLayer(cloudParticles, currentZoom));
-        console.log('Added cloud layers with opacity:', particleOpacity, 'zoom:', currentZoom);
       }
 
       // Rain layer - visible at all zoom levels once activated
@@ -252,7 +251,6 @@ export default function WeatherVisualization() {
           latitude: viewState.latitude, 
           zoom: currentZoom 
         }));
-        console.log('Added rain layer with', rainParticles.length, 'particles at zoom:', currentZoom);
       }
     }
 
@@ -261,11 +259,9 @@ export default function WeatherVisualization() {
       const simpleBuildingLayer = createSimple3DBuildingLayer(weatherStations, currentZoom);
       if (simpleBuildingLayer) {
         layerList.push(simpleBuildingLayer);
-        console.log('Added simple 3D building layer');
       }
     }
 
-    console.log('Total layers created:', layerList.length);
     return layerList;
   }, [
     weatherStations, 
@@ -779,6 +775,16 @@ export default function WeatherVisualization() {
                       </div>
                     </div>
 
+                    <div className="bg-gradient-to-r from-yellow-50 to-orange-50 rounded-lg p-3">
+                      <div className="text-sm font-medium text-gray-900 mb-2">🏢 3D 건물 정보</div>
+                      <div className="space-y-1 text-xs text-gray-700">
+                        <div>• 줄 13+: 3D 건물 모델 표시</div>
+                        <div>• 마우스 호버: 건물 이름과 높이 표시</div>
+                        <div>• 서울 전체 100+ 개 주요 건물 포함</div>
+                        <div>• 날씨에 따른 건물 색상 변화</div>
+                      </div>
+                    </div>
+                    
                     <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg p-3">
                       <div className="text-sm font-medium text-gray-900 mb-2">🎮 조작 방법</div>
                       <div className="space-y-1 text-xs text-gray-700">
@@ -786,7 +792,8 @@ export default function WeatherVisualization() {
                         <div>• 스크롤: 줌 인/아웃 (비와 구름 파티클 확인)</div>
                         <div>• Shift + 드래그: 회전</div>
                         <div>• 더블클릭: 줌 인</div>
-                        <div>• 줄 11+ : 3D 날씨 효과 활성화</div>
+                        <div>• 줄 11+: 3D 날씨 효과 활성화</div>
+                        <div>• 줄 13+: 3D 건물 정보 활성화</div>
                       </div>
                     </div>
                   </div>
@@ -871,8 +878,21 @@ export default function WeatherVisualization() {
         <div className="absolute top-20 right-4 z-10 bg-white/95 backdrop-blur-sm rounded-lg shadow-lg border border-gray-200 p-3 sm:p-4 w-56 sm:w-72 hidden md:block">
           <div className="text-sm font-medium text-gray-900 mb-3 flex items-center gap-2">
             <span>🌧️</span>
-3D 날씨 효과 가이드
+            3D 날씨 효과 가이드
           </div>
+          
+          {/* Building Info - Only visible at zoom 13+ */}
+          {viewState.zoom >= 13 && (
+            <div className="mb-4 bg-orange-50 rounded-lg p-2 border border-orange-200">
+              <div className="text-xs font-medium text-orange-800 mb-1 flex items-center gap-1">
+                <span>🏢</span>
+                3D 건물 정보
+              </div>
+              <div className="text-xs text-orange-700">
+                건물에 마우스를 올리면 이름과 높이를 확인할 수 있습니다
+              </div>
+            </div>
+          )}
           
           {/* Cloud Legend */}
           <div className="mb-4">

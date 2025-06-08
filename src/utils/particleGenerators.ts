@@ -8,11 +8,8 @@ export const generateCloudParticles = (stations: WeatherStation[], geoJSON: Seou
   const particles: CloudParticle[] = [];
   
   if (!geoJSON) {
-    console.log('No GeoJSON data for cloud particles');
     return particles;
   }
-  
-  console.log('Generating cloud particles for', stations.length, 'stations');
   
   
   stations.forEach((station) => {
@@ -74,13 +71,12 @@ export const generateCloudParticles = (stations: WeatherStation[], geoJSON: Seou
             particles.push(cloudParticle);
           }
         }
-      } catch (error) {
-        console.warn('Error generating cloud particles for', station.name, error);
+      } catch {
+        // Silently skip on error
       }
     }
   });
   
-  console.log('Generated', particles.length, 'cloud particles');
   return particles;
 };
 
@@ -150,11 +146,8 @@ export const generateRainParticles = (
   let particleId = 0;
   
   if (!geoJSON) {
-    console.log('No GeoJSON data for rain particles');
     return particles;
   }
-  
-  console.log('Generating rain particles for', stations.length, 'stations');
   
   stations.forEach((station) => {
     // Get weather state and color configuration
@@ -189,14 +182,13 @@ export const generateRainParticles = (
           if (rainParticle) {
             particles.push(rainParticle);
           }
-        } catch (error: unknown) {
-          console.error('Error generating rain particles:', error);
+        } catch {
+          // Silently skip on error
         }
       }
     }
   });
   
-  console.log('Generated', particles.length, 'rain particles', viewState ? `(zoom: ${viewState.zoom.toFixed(1)})` : '');
   return particles;
 };
 

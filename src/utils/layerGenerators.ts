@@ -16,13 +16,7 @@ export const createDistrictRainLayer = (
   weatherStations: WeatherStation[], 
   seoulGeoJSON: SeoulGeoJSON | null
 ) => {
-  console.log('Creating district layer:', {
-    totalStations: weatherStations.length,
-    hasGeoJSON: !!seoulGeoJSON
-  });
-  
   if (!seoulGeoJSON) {
-    console.log('District layer not created - no GeoJSON');
     return null;
   }
 
@@ -45,9 +39,6 @@ export const createDistrictRainLayer = (
     })
   };
   
-  console.log('Enhanced GeoJSON features:', enhancedGeoJSON.features.length);
-  console.log('Features with weather data:', enhancedGeoJSON.features.filter(f => f.properties.hasWeatherData).length);
-
   return new GeoJsonLayer({
     id: 'district-areas',
     data: enhancedGeoJSON,
@@ -115,12 +106,12 @@ export const createCloudBaseLayer = (cloudParticles: CloudParticle[], zoom: numb
   return new ScatterplotLayer({
     id: 'clouds-base',
     data: layeredParticles,
-    getPosition: (d: any) => d.position,
-    getFillColor: (d: any) => {
+    getPosition: (d: CloudParticle & { layerType?: string; opacity: number }) => d.position,
+    getFillColor: (d: CloudParticle & { layerType?: string; opacity: number }) => {
       const alpha = Math.floor(d.opacity * 255);
       return [d.color[0], d.color[1], d.color[2], alpha];
     },
-    getRadius: (d: any) => {
+    getRadius: (d: CloudParticle & { layerType?: string; opacity: number }) => {
       const zoomMultiplier = zoom >= 13 ? 1 + (zoom - 13) * 0.2 : 
                             zoom >= 11 ? 0.9 + (zoom - 11) * 0.05 : 0.9;
       
@@ -179,8 +170,8 @@ export const createCloudHighlightLayer = (cloudParticles: CloudParticle[], zoom:
   return new ScatterplotLayer({
     id: 'clouds-highlight',
     data: glowParticles,
-    getPosition: (d: any) => d.position,
-    getFillColor: (d: any) => {
+    getPosition: (d: CloudParticle & { layerType?: string; opacity: number }) => d.position,
+    getFillColor: (d: CloudParticle & { layerType?: string; opacity: number }) => {
       const alpha = Math.floor(d.opacity * 255);
       // Slightly brighter and warmer for highlight effect
       return [
@@ -190,7 +181,7 @@ export const createCloudHighlightLayer = (cloudParticles: CloudParticle[], zoom:
         alpha
       ];
     },
-    getRadius: (d: any) => {
+    getRadius: (d: CloudParticle & { layerType?: string; opacity: number }) => {
       const zoomMultiplier = zoom >= 13 ? 1 + (zoom - 13) * 0.2 : 
                             zoom >= 11 ? 0.9 + (zoom - 11) * 0.05 : 0.9;
       
@@ -232,21 +223,14 @@ export const createRainLayer = (
   let filteredParticles = rainParticles;
   
   if (viewState && viewState.zoom < 11) {
-    console.log('Filtering rain particles for low zoom:', viewState.zoom);
-    
     filteredParticles = rainParticles.filter((_, index) => {
       const hash = (index * 2654435761) % 10;
       return hash < 3; // Keep 30% at low zoom
     });
-    
-    console.log('Filtered rain particles:', filteredParticles.length, 'from', rainParticles.length);
-  } else {
-    console.log('Showing all rain particles:', rainParticles.length, 'at zoom:', viewState?.zoom);
   }
 
   // Safety check for empty data
   if (!filteredParticles || filteredParticles.length === 0) {
-    console.log('No rain particles to display');
     return null;
   }
 
@@ -334,8 +318,6 @@ export const createWeatherColumnLayer = (
   if (!seoulGeoJSON || zoom > 11) { // Changed to > 11 so columns show at zoom 11
     return null;
   }
-  
-  console.log('Creating weather columns at zoom:', zoom);
 
   // Calculate district centers from GeoJSON
   const districtCenters = weatherStations.map(station => {
@@ -374,9 +356,6 @@ export const createWeatherColumnLayer = (
     };
   });
 
-  console.log('District centers created:', districtCenters.length);
-  console.log('Sample district data:', districtCenters[0]);
-
   return new ColumnLayer({
     id: 'weather-columns',
     data: districtCenters,
@@ -384,9 +363,7 @@ export const createWeatherColumnLayer = (
     getElevation: (d: { station: WeatherStation }) => {
       // Height based on precipitation (100-2000m)
       const precipitation = d.station.weather.precipitation;
-      const height = Math.max(100, precipitation * 80 + 200);
-      console.log(`Station ${d.station.name}: precipitation=${precipitation}, height=${height}`);
-      return height;
+      return Math.max(100, precipitation * 80 + 200);
     },
     getFillColor: (d: { station: WeatherStation }): [number, number, number, number] => {
       const precipitation = d.station.weather.precipitation;

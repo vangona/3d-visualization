@@ -1525,8 +1525,6 @@ export const createSimple3DBuildingLayer = (
 ) => {
   if (zoom < 13) return null; // 줌 13부터 표시
 
-  console.log('Creating simple 3D building layer at zoom:', zoom);
-
   return new GeoJsonLayer({
     id: 'simple-buildings-3d',
     data: SAMPLE_BUILDINGS,
