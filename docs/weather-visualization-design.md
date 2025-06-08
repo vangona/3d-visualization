@@ -311,7 +311,103 @@ interface DongInfo {
 - **날씨 연동**: 동 선택시 해당 구의 실시간 날씨 표시
 - **검색 편의**: "구의동", "역삼동" 등 직접 검색 가능
 
-## 13. 향후 확장 가능성
+## 13. 5단계 날씨 색상 시스템 구현 완료 (2025.06.08)
+
+### 13.1 WeatherColorConfig 시스템
+```typescript
+interface WeatherColorConfig {
+  id: string;                              // 날씨 상태 ID
+  name: string;                           // 한글 이름
+  emoji: string;                          // 이모지 표시
+  precipitation: [number, number];        // [최소, 최대] 강수량 범위 (mm/h)
+  cloudCoverage: [number, number];        // [최소, 최대] 구름양 범위 (%)
+  colors: {
+    cloud: [number, number, number, number];  // 구름 색상 RGBA
+    rain: [number, number, number, number];   // 비 색상 RGBA
+    ambient: [number, number, number];        // 주변광 색상 RGB
+    sky: { brightness: number; contrast: number }; // 하늘 밝기/대비
+  };
+}
+```
+
+### 13.2 5단계 날씨 상태 정의
+| 단계 | 상태 | 강수량 범위 | 구름양 범위 | 구름 색상 | 특징 |
+|------|------|------------|------------|----------|------|
+| 1 | 맑음 ☀️ | 0mm | 0-20% | 매우 희미한 흰색 | 밝고 선명한 하늘 |
+| 2 | 구름조금 ⛅ | 0-0.5mm | 20-50% | 밝은 흰색 | 부드러운 노란빛 |
+| 3 | 흐림 ☁️ | 0.5-2mm | 50-75% | 밝은 회색 | 차가운 회색빛 |
+| 4 | 비 🌧️ | 2-10mm | 75-90% | 중간 회색 | 파란빛 비 |
+| 5 | 폭우 ⛈️ | 10-50mm | 90-100% | 어두운 회색 | 짙은 남색 비 |
+
+### 13.3 구현된 핵심 기능
+- ✅ **동적 날씨 상태 결정**: `getWeatherState()` 함수로 강수량과 구름양 기반 자동 분류
+- ✅ **색상 범례 UI**: 사이드패널에 5단계 색상 표시
+- ✅ **조명 시스템**: 날씨 상태별 ambient/directional 조명 자동 조정
+- ✅ **하늘 밝기**: 날씨에 따른 brightness/contrast 실시간 변경
+- ✅ **구름 효과**: 날씨별 구름 색상, 크기, 투명도 차별화
+- ✅ **비 효과**: 강수량별 비 속도, 크기, 밀도 조정
+
+## 14. 구름 렌더링 개선 완료
+
+### 14.1 메타볼 효과 시도 및 최적화
+- ✅ **클러스터 기반 생성**: 구름을 클러스터 단위로 생성하여 자연스러운 분포
+- ✅ **거리 기반 투명도**: 클러스터 중심에서 거리에 따른 페이드 효과
+- ✅ **크기 다양성**: 30% 중간, 40% 큰, 30% 매우 큰 크기로 분포
+- ✅ **이중 레이어 렌더링**: 기본 구름 + 그림자 레이어로 입체감 표현
+- ✅ **색상 변화**: 미세한 색상 변화로 자연스러운 구름 표현
+
+### 14.2 기술적 구현 세부사항
+```typescript
+// 클러스터 기반 구름 생성
+const clusterCount = Math.floor(cloudDensity * 8) + 2;
+const particlesPerCluster = Math.floor(cloudDensity * 15) + 8;
+
+// 거리 기반 투명도 계산
+const distanceFromClusterCenter = distance / spreadRadius;
+const fadeEffect = Math.pow(1 - distanceFromClusterCenter, 1.5);
+const clusterOpacity = baseOpacity * fadeEffect * (0.6 + Math.random() * 0.4);
+
+// 이중 레이어 구름 렌더링
+- 기본 레이어: ScatterplotLayer with billboard=true
+- 그림자 레이어: 300m 아래에 어두운 구름으로 입체감 표현
+```
+
+## 15. 구 단위 날씨 표시 완료 (2025.06.08)
+
+### 15.1 문제점 및 해결
+**문제**: 구름과 비가 특정 동에만 나타나는 현상
+**해결**: 구별 모든 동 features를 그룹화하여 전체 구 영역에 날씨 효과 적용
+
+### 15.2 기술적 구현
+```typescript
+// 해당 구의 모든 동 features 찾기
+const districtFeatures = geoJSON.features.filter((f: SeoulDistrictFeature) => 
+  f.properties.sggnm === station.name
+);
+
+// 구 전체의 bbox 계산
+const districtCollection = turf.featureCollection(districtFeatures);
+const bbox = turf.bbox(districtCollection);
+
+// 구 영역 내 파티클 생성 시 모든 동 polygon 체크
+const isInDistrict = districtFeatures.some((feature) => 
+  turf.booleanPointInPolygon(point, feature)
+);
+```
+
+### 15.3 개선된 날씨 표시
+- ✅ **전체 구 커버리지**: 각 구의 모든 동 영역에 날씨 효과 표시
+- ✅ **정확한 경계 체크**: turf.js의 point-in-polygon으로 정확한 위치 검증
+- ✅ **구별 일관성**: 같은 구 내 모든 동이 동일한 날씨 상태 표시
+- ✅ **성능 최적화**: 구별 bbox를 이용한 효율적인 파티클 생성
+
+### 15.4 최종 구현 상태
+- **25개 구**: 모든 서울시 구에 날씨 스테이션 운영
+- **425개 동**: 동 단위 네비게이션 지원하되 날씨는 구 단위 관리
+- **정확한 경계**: 실제 행정구역 경계에 맞춘 구름/비 표시
+- **일관된 UX**: 구 선택 시 해당 구 전체 영역에 날씨 효과 표시
+
+## 16. 향후 확장 가능성
 
 - 기상청 API 연동 (현재 목데이터 사용)
 - 동별 상세 날씨 데이터 (미세먼지, 온도 차이 등)
