@@ -25,13 +25,14 @@ import { getWeatherDisplay, calculateWeatherEffects } from '@/utils/weather';
 import { generateMockWeatherStations, generateDongData } from '@/utils/dataGenerators';
 import { generateCloudParticles, generateRainParticles } from '@/utils/particleGenerators';
 import { createDistrictRainLayer, createCloudBaseLayer, createCloudHighlightLayer, createRainLayer, createWeatherColumnLayer } from '@/utils/layerGenerators';
+import { createSimple3DBuildingLayer } from '@/utils/simpleBuildingLayer';
 
 export default function WeatherVisualization() {
   const [viewState, setViewState] = useState<MapViewState>({
     longitude: 126.9780,  // 서울시청
     latitude: 37.5665,
     zoom: 10.5, // 원기둥이 보이도록 줌 조정
-    pitch: 45, // 3D 원기둥을 잘 보이도록 각도 조정
+    pitch: 60, // 3D 건물이 잘 보이도록 각도 증가
     bearing: 0,
   });
 
@@ -164,8 +165,8 @@ export default function WeatherVisualization() {
       console.log('Added district layer');
     }
 
-    // Particle layers (zoom >= 11 for gradual appearance)
-    if (currentZoom >= 11) {
+    // Particle layers (zoom 11-14 for gradual appearance)
+    if (currentZoom >= 11 && currentZoom < 15) {
       // Calculate opacity based on zoom level for smooth transition
       const particleOpacity = Math.min(1, (currentZoom - 11) / 2); // 0 at zoom 11, 1 at zoom 13+
       
@@ -186,6 +187,22 @@ export default function WeatherVisualization() {
         console.log('Added rain layer with', rainParticles.length, 'particles at zoom:', currentZoom);
       }
     }
+
+    // Simple 3D buildings (zoom >= 13)
+    if (currentZoom >= 13) {
+      const simpleBuildingLayer = createSimple3DBuildingLayer(weatherStations, currentZoom);
+      if (simpleBuildingLayer) {
+        layerList.push(simpleBuildingLayer);
+        console.log('Added simple 3D building layer');
+      }
+    }
+
+    // MVT layers for building/road detail (zoom >= 15) - 일시적으로 비활성화
+    // if (currentZoom >= 15) {
+    //   const mvtLayers = createAllMVTLayers(weatherStations, currentZoom);
+    //   layerList.push(...mvtLayers);
+    //   console.log('Added', mvtLayers.length, 'MVT layers for building/road detail');
+    // }
 
     console.log('Total layers created:', layerList.length);
     return layerList;
