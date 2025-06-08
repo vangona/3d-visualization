@@ -294,22 +294,33 @@ const generateCloudParticles = (stations: WeatherStation[], geoJSON: SeoulGeoJSO
       // 구름 클러스터 수: 밀도에 따라 조정
       const clusterCount = Math.floor(cloudDensity * 8) + 2;
       
-      // 해당 구역의 GeoJSON feature 찾기
-      const districtFeature = geoJSON.features.find((f: SeoulDistrictFeature) => f.properties.sggnm === station.name);
-      if (!districtFeature) return;
+      // 해당 구의 모든 동 features 찾기
+      const districtFeatures = geoJSON.features.filter((f: SeoulDistrictFeature) => f.properties.sggnm === station.name);
+      if (districtFeatures.length === 0) return;
+      
+      // 구 전체의 bbox 계산
+      const districtCollection = turf.featureCollection(districtFeatures);
       
       try {
-        const bbox = turf.bbox(districtFeature);
+        const bbox = turf.bbox(districtCollection);
         
         // 구름 클러스터 생성
         for (let cluster = 0; cluster < clusterCount; cluster++) {
           // 각 클러스터의 중심점 찾기
           let clusterCenter: [number, number] | null = null;
           
-          for (let attempt = 0; attempt < 5; attempt++) {
+          // bbox 내의 랜덤 포인트 생성하고, 실제 구역 내에 있는지 확인
+          for (let attempt = 0; attempt < 10; attempt++) {
             const randomPoint = turf.randomPoint(1, { bbox });
-            if (turf.booleanPointInPolygon(randomPoint.features[0], districtFeature)) {
-              clusterCenter = randomPoint.features[0].geometry.coordinates as [number, number];
+            const point = randomPoint.features[0];
+            
+            // 해당 구의 어떤 동이라도 포함하는지 확인
+            const isInDistrict = districtFeatures.some((feature) => 
+              turf.booleanPointInPolygon(point, feature)
+            );
+            
+            if (isInDistrict) {
+              clusterCenter = point.geometry.coordinates as [number, number];
               break;
             }
           }
@@ -401,49 +412,37 @@ const generateRainParticles = (stations: WeatherStation[], geoJSON: SeoulGeoJSON
                              weatherState.id === 'cloudy' ? 1.2 : 1.0;
       const particleCount = Math.floor(baseCount * stateMultiplier);
       
+      // 해당 구의 모든 동 features 찾기
+      const districtFeatures = geoJSON.features.filter((f: SeoulDistrictFeature) => f.properties.sggnm === station.name);
+      if (districtFeatures.length === 0) return;
+      
+      // 구 전체의 bbox 계산
+      const districtCollection = turf.featureCollection(districtFeatures);
+      const bbox = turf.bbox(districtCollection);
+      
       for (let i = 0; i < particleCount; i++) {
-        // 해당 구역의 GeoJSON feature 찾기 (sggnm 속성 사용)
-        const districtFeature = geoJSON.features.find((f: SeoulDistrictFeature) => f.properties.sggnm === station.name);
-        if (!districtFeature) {
-          // fallback: 스테이션 주변에 랜덤 포인트 생성
-          const velocity = weatherState.id === 'heavy_rain' ? -25 - Math.random() * 15 :
-                          weatherState.id === 'rainy' ? -20 - Math.random() * 10 :
-                          -15 - Math.random() * 8;
-          const rainSize = weatherState.id === 'heavy_rain' ? 1.5 + Math.random() * 2 :
-                          weatherState.id === 'rainy' ? 1.0 + Math.random() * 1.5 :
-                          0.5 + Math.random() * 1;
-          
-          particles.push({
-            id: `rain-${particleId++}`,
-            position: [
-              station.location.longitude + (Math.random() - 0.5) * 0.01,
-              station.location.latitude + (Math.random() - 0.5) * 0.01,
-              500 + Math.random() * 2000,
-            ],
-            velocity: [0, 0, velocity],
-            size: rainSize,
-            lifetime: Math.random() * 3,
-          });
-          continue;
-        }
-        
         try {
-          // turf.js를 사용하여 폴리곤 내부의 랜덤 포인트 생성
-          const bbox = turf.bbox(districtFeature);
+          // bbox 내의 랜덤 포인트 생성하고, 실제 구역 내에 있는지 확인
           let point: [number, number] | null = null;
           
-          // 최대 10번 시도
           for (let attempt = 0; attempt < 10; attempt++) {
             const randomPoint = turf.randomPoint(1, { bbox });
-            if (turf.booleanPointInPolygon(randomPoint.features[0], districtFeature)) {
-              point = randomPoint.features[0].geometry.coordinates as [number, number];
+            const testPoint = randomPoint.features[0];
+            
+            // 해당 구의 어떤 동이라도 포함하는지 확인
+            const isInDistrict = districtFeatures.some((feature) => 
+              turf.booleanPointInPolygon(testPoint, feature)
+            );
+            
+            if (isInDistrict) {
+              point = testPoint.geometry.coordinates as [number, number];
               break;
             }
           }
           
-          // 포인트를 찾지 못하면 스테이션 위치 사용
+          // 포인트를 찾지 못하면 bbox 중심 사용
           if (!point) {
-            point = [station.location.longitude, station.location.latitude];
+            point = [(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2];
           }
           
           // 빗줄기를 표현하기 위해 다양한 시작 높이
@@ -474,18 +473,6 @@ const generateRainParticles = (stations: WeatherStation[], geoJSON: SeoulGeoJSON
           });
         } catch (error: unknown) {
           console.error('Error generating rain particles:', error);
-          // 에러 발생 시 스테이션 주변에 생성
-          particles.push({
-            id: `rain-${particleId++}`,
-            position: [
-              station.location.longitude + (Math.random() - 0.5) * 0.01,
-              station.location.latitude + (Math.random() - 0.5) * 0.01,
-              500 + Math.random() * 2000,
-            ],
-            velocity: [0, 0, -15 - Math.random() * 10],
-            size: 0.5 + Math.random() * 1,
-            lifetime: Math.random() * 3,
-          });
         }
       }
     }
