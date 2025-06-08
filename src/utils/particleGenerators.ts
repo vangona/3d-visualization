@@ -92,10 +92,10 @@ const generateSingleCloudParticle = (
   cluster: number,
   cloudDensity: number
 ): CloudParticle => {
-  // 클러스터 중심 주변에 파티클 분산
-  const spreadRadius = 0.004 + Math.random() * 0.008;
+  // 클러스터 중심 주변에 파티클 분산 (더 밀집된 구름)
+  const spreadRadius = 0.002 + Math.random() * 0.006; // 더 작은 범위로 밀집
   const angle = Math.random() * Math.PI * 2;
-  const distance = Math.pow(Math.random(), 0.6) * spreadRadius;
+  const distance = Math.pow(Math.random(), 0.8) * spreadRadius; // 더 중심에 집중
   
   const point: [number, number] = [
     clusterCenter[0] + Math.cos(angle) * distance,
@@ -110,22 +110,23 @@ const generateSingleCloudParticle = (
   // 클러스터 중심에서의 거리에 따른 투명도 계산 (더 부드러운 그라데이션)
   const distanceFromClusterCenter = distance / spreadRadius;
   const baseOpacity = weatherState.colors.cloud[3];
-  const fadeEffect = Math.pow(1 - distanceFromClusterCenter, 1.5); // 더 자연스러운 페이드
-  const clusterOpacity = baseOpacity * fadeEffect * (0.5 + Math.random() * 0.3); // 투명도 변화 (더 투명하게)
+  const fadeEffect = Math.pow(1 - distanceFromClusterCenter, 1.2); // 더 부드러운 페이드
+  const clusterOpacity = baseOpacity * fadeEffect * (0.7 + Math.random() * 0.4); // 더 진한 투명도
   
-  // 날씨 상태에 따른 구름 색상 적용
-  const [r, g, b] = weatherState.colors.cloud;
-  // 색상 변화를 줄여서 원래 색상이 더 잘 보이도록 함
-  const colorVariation = 0.9 + Math.random() * 0.2; // 0.9-1.1 색상 변화 (더 작은 변화)
-  const finalR = Math.min(255, r * colorVariation);
-  const finalG = Math.min(255, g * colorVariation);
-  const finalB = Math.min(255, b * colorVariation);
+  // 날씨 상태에 따른 구름 색상 적용 (RGB만 사용, 알파는 제외)
+  const [r, g, b] = weatherState.colors.cloud.slice(0, 3); // 알파 채널 제외
+  console.log(`Cloud color for ${weatherState.id}:`, [r, g, b]);
+  // 색상 변화 비활성화 (원래 색상 유지)
+  const finalR = r;
+  const finalG = g;
+  const finalB = b;
+  console.log(`Final cloud color:`, [finalR, finalG, finalB]);
   
-  // 더 큰 크기로 조정하여 겹침 효과 증대
+  // 구름 크기를 더 크고 일관성 있게 조정
   const sizeRandomness = Math.random();
-  const baseSizeVariation = sizeRandomness < 0.3 ? 80 + Math.random() * 40 : // 30% 중간
-                           sizeRandomness < 0.7 ? 120 + Math.random() * 60 : // 40% 큰
-                           180 + Math.random() * 80; // 30% 매우 큰
+  const baseSizeVariation = sizeRandomness < 0.2 ? 150 + Math.random() * 50 : // 20% 중간
+                           sizeRandomness < 0.6 ? 200 + Math.random() * 100 : // 40% 큰
+                           300 + Math.random() * 150; // 40% 매우 큰
   
   const sizeMultiplier = weatherState.id === 'heavy_rain' ? 1.2 : 
                         weatherState.id === 'rainy' ? 1.1 :
@@ -137,7 +138,7 @@ const generateSingleCloudParticle = (
     size: baseSizeVariation * sizeMultiplier,
     density: cloudDensity,
     color: [finalR, finalG, finalB],
-    opacity: Math.max(0.1, Math.min(0.6, clusterOpacity)), // 더 투명하게 조정
+    opacity: Math.max(0.3, Math.min(0.8, clusterOpacity)), // 더 진한 구름으로 조정
   };
 };
 

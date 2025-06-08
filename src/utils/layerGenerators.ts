@@ -80,71 +80,148 @@ export const createDistrictRainLayer = (
   });
 };
 
-// Generate cloud base layer
+// Generate cloud base layer with multiple overlapping circles for gradient effect
 export const createCloudBaseLayer = (cloudParticles: CloudParticle[], zoom: number = 11) => {
+  // Create multiple layers of the same particles with different sizes and opacities
+  const layeredParticles = [];
+  
+  cloudParticles.forEach((particle, index) => {
+    // Create 3 layers for each particle to simulate gradient
+    // Outer layer (largest, most transparent)
+    layeredParticles.push({
+      ...particle,
+      id: `${index}-outer`,
+      layerType: 'outer',
+      opacity: particle.opacity * 0.3
+    });
+    
+    // Middle layer (medium size, medium opacity)
+    layeredParticles.push({
+      ...particle,
+      id: `${index}-middle`, 
+      layerType: 'middle',
+      opacity: particle.opacity * 0.6
+    });
+    
+    // Inner layer (smallest, most opaque)
+    layeredParticles.push({
+      ...particle,
+      id: `${index}-inner`,
+      layerType: 'inner', 
+      opacity: particle.opacity * 0.9
+    });
+  });
+
   return new ScatterplotLayer({
     id: 'clouds-base',
-    data: cloudParticles,
-    getPosition: (d: CloudParticle) => d.position,
-    getFillColor: (d: CloudParticle) => {
-      // 색상값이 제대로 전달되도록 확인
-      const alpha = Math.floor(d.opacity * 255); // 0-1 범위를 0-255로 변환
-      return [d.color[0], d.color[1], d.color[2], alpha];
+    data: layeredParticles,
+    getPosition: (d: any) => d.position,
+    getFillColor: (d: any) => {
+      const alpha = Math.floor(d.opacity * 255);
+      const color = [d.color[0], d.color[1], d.color[2], alpha];
+      if (Math.random() < 0.01) { // 1% 확률로 로그 출력
+        console.log('Cloud layer color:', color, 'original:', d.color);
+      }
+      return color;
     },
-    getRadius: (d: CloudParticle) => {
-      // 줌 레벨에 따른 크기 조정
-      const zoomMultiplier = zoom >= 13 ? 1 + (zoom - 13) * 0.3 : // 13+ 줌에서 30%씩 증가
-                            zoom >= 11 ? 0.8 + (zoom - 11) * 0.1 : 0.8; // 11-13에서 점진 증가
-      return d.size * 1.3 * zoomMultiplier;
+    getRadius: (d: any) => {
+      const zoomMultiplier = zoom >= 13 ? 1 + (zoom - 13) * 0.2 : 
+                            zoom >= 11 ? 0.9 + (zoom - 11) * 0.05 : 0.9;
+      
+      // Different sizes for gradient layers
+      let sizeMultiplier;
+      switch (d.layerType) {
+        case 'outer': sizeMultiplier = 2.2; break;  // Largest
+        case 'middle': sizeMultiplier = 1.5; break; // Medium
+        case 'inner': sizeMultiplier = 0.8; break;  // Smallest
+        default: sizeMultiplier = 1.8;
+      }
+      
+      return d.size * sizeMultiplier * zoomMultiplier;
     },
     radiusUnits: 'meters',
-    opacity: 1, // 전체 레이어 투명도를 1로 설정 (개별 알파값만 사용)
-    radiusMinPixels: 25,
-    radiusMaxPixels: Math.min(600, 400 + (zoom - 11) * 50), // 줌에 따라 최대 크기 증가
+    opacity: 1,
+    radiusMinPixels: 20,
+    radiusMaxPixels: Math.min(1000, 800 + (zoom - 11) * 80),
     stroked: false,
     filled: true,
     antialiasing: true,
     billboard: true,
-    // 블렌딩 파라미터 제거 - ScatterplotLayer의 기본값 사용
     parameters: {
       depthTest: false
+      // 블렌딩 비활성화 (색상 확인용)
+      // blend: true,
+      // blendFunc: [770, 771, 1, 771], // Additive blending for soft gradient
+      // blendEquation: 32774
     }
   });
 };
 
-// Generate cloud highlight layer
+// Generate cloud highlight layer with soft glow effect
 export const createCloudHighlightLayer = (cloudParticles: CloudParticle[], zoom: number = 11) => {
+  // Create soft glow particles with gradient effect
+  const glowParticles = [];
+  
+  cloudParticles.filter((_, index) => index % 2 === 0).forEach((particle, index) => {
+    // Outer glow (largest, very transparent)
+    glowParticles.push({
+      ...particle,
+      id: `${index}-glow-outer`,
+      layerType: 'glow-outer',
+      opacity: particle.opacity * 0.15
+    });
+    
+    // Inner glow (smaller, more visible)
+    glowParticles.push({
+      ...particle,
+      id: `${index}-glow-inner`,
+      layerType: 'glow-inner',
+      opacity: particle.opacity * 0.4
+    });
+  });
+
   return new ScatterplotLayer({
     id: 'clouds-highlight',
-    data: cloudParticles.filter((_, index) => index % 3 === 0), // 1/3만 렌더링
-    getPosition: (d: CloudParticle) => d.position,
-    getFillColor: (d: CloudParticle) => {
-      // 하이라이트 효과를 위해 약간 밝게, 더 투명하게
-      const alpha = Math.floor(d.opacity * 150); // 더 투명한 하이라이트
+    data: glowParticles,
+    getPosition: (d: any) => d.position,
+    getFillColor: (d: any) => {
+      const alpha = Math.floor(d.opacity * 255);
+      // Slightly brighter and warmer for highlight effect
       return [
-        Math.min(255, d.color[0] * 1.1), // 살짝만 밝게
-        Math.min(255, d.color[1] * 1.1),
+        Math.min(255, d.color[0] * 1.2),
+        Math.min(255, d.color[1] * 1.15),
         Math.min(255, d.color[2] * 1.1),
         alpha
       ];
     },
-    getRadius: (d: CloudParticle) => {
-      // 줌 레벨에 따른 크기 조정 (하이라이트용)
-      const zoomMultiplier = zoom >= 13 ? 1 + (zoom - 13) * 0.3 : 
-                            zoom >= 11 ? 0.8 + (zoom - 11) * 0.1 : 0.8;
-      return d.size * 0.7 * zoomMultiplier;
+    getRadius: (d: any) => {
+      const zoomMultiplier = zoom >= 13 ? 1 + (zoom - 13) * 0.2 : 
+                            zoom >= 11 ? 0.9 + (zoom - 11) * 0.05 : 0.9;
+      
+      // Different sizes for glow layers
+      let sizeMultiplier;
+      switch (d.layerType) {
+        case 'glow-outer': sizeMultiplier = 3.0; break;  // Very large glow
+        case 'glow-inner': sizeMultiplier = 1.8; break;  // Medium glow
+        default: sizeMultiplier = 1.2;
+      }
+      
+      return d.size * sizeMultiplier * zoomMultiplier;
     },
     radiusUnits: 'meters',
-    opacity: 1, // 전체 레이어 투명도를 1로 설정
+    opacity: 1,
     radiusMinPixels: 15,
-    radiusMaxPixels: Math.min(300, 200 + (zoom - 11) * 25), // 하이라이트 최대 크기 증가
+    radiusMaxPixels: Math.min(1200, 1000 + (zoom - 11) * 100),
     stroked: false,
     filled: true,
     antialiasing: true,
     billboard: true,
-    // 블렌딩 파라미터 제거 - ScatterplotLayer의 기본값 사용
     parameters: {
       depthTest: false
+      // 블렌딩 비활성화 (색상 확인용)
+      // blend: true,
+      // blendFunc: [770, 1, 1, 1], // Screen blending for soft glow
+      // blendEquation: 32774
     }
   });
 };

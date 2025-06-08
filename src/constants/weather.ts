@@ -8,7 +8,7 @@ export const WEATHER_STATES: WeatherColorConfig[] = [
     precipitation: [0, 0],
     cloudCoverage: [0, 20],
     colors: {
-      cloud: [220, 220, 230, 0.5],      // 일관된 회색 구름
+      cloud: [245, 250, 255, 0.4],     // 자연스러운 밝은 회색 구름 (아주 연한 파란빛)
       rain: [135, 206, 235, 0],        // 비 없음
       ambient: [255, 248, 220],        // 따뜻한 햇빛
       sky: { brightness: 1.0, contrast: 1.0 }
@@ -21,7 +21,7 @@ export const WEATHER_STATES: WeatherColorConfig[] = [
     precipitation: [0, 0.5],
     cloudCoverage: [20, 50],
     colors: {
-      cloud: [220, 220, 230, 0.5],     // 일관된 회색 구름
+      cloud: [220, 225, 235, 0.5],     // 자연스러운 연회색 구름
       rain: [176, 196, 222, 0.1],      // 매우 약한 비
       ambient: [245, 245, 220],        // 부드러운 노란빛
       sky: { brightness: 0.9, contrast: 0.95 }
@@ -34,7 +34,7 @@ export const WEATHER_STATES: WeatherColorConfig[] = [
     precipitation: [0.5, 2],
     cloudCoverage: [50, 75],
     colors: {
-      cloud: [220, 220, 230, 0.6],     // 일관된 회색 구름
+      cloud: [180, 185, 195, 0.6],     // 자연스러운 중간 회색 구름
       rain: [119, 136, 153, 0.3],      // 약한 회색 비
       ambient: [220, 220, 220],        // 차가운 회색빛
       sky: { brightness: 0.75, contrast: 0.85 }
@@ -47,7 +47,7 @@ export const WEATHER_STATES: WeatherColorConfig[] = [
     precipitation: [2, 10],
     cloudCoverage: [75, 90],
     colors: {
-      cloud: [220, 220, 230, 0.7],     // 일관된 회색 구름
+      cloud: [170, 180, 190, 0.7],     // 밝은 비구름 (파란빛 약간)
       rain: [70, 130, 180, 0.6],       // 파란빛 비
       ambient: [169, 169, 169],        // 어두운 회색빛
       sky: { brightness: 0.5, contrast: 0.7 }
@@ -60,7 +60,7 @@ export const WEATHER_STATES: WeatherColorConfig[] = [
     precipitation: [10, 50],
     cloudCoverage: [90, 100],
     colors: {
-      cloud: [220, 220, 230, 0.8],     // 일관된 회색 구름
+      cloud: [140, 150, 160, 0.8],     // 자연스러운 진회색 폭우구름 (너무 짙지 않게)
       rain: [25, 25, 112, 0.8],        // 짙은 남색 비
       ambient: [105, 105, 105],        // 매우 어두운 회색
       sky: { brightness: 0.3, contrast: 0.6 }
