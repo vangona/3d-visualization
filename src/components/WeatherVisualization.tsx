@@ -12,6 +12,7 @@ import {
 } from '@deck.gl/core';
 import Map from 'react-map-gl/mapbox';
 import 'mapbox-gl/dist/mapbox-gl.css';
+// Import for simple tooltip positioning
 import { SeoulGeoJSON } from '@/data/seoul-geojson-loader';
 
 // Import types
@@ -42,7 +43,35 @@ export default function WeatherVisualization() {
   const [seoulGeoJSON, setSeoulGeoJSON] = useState<SeoulGeoJSON | null>(null);
   const [, setDongData] = useState<DongInfo[]>([]);
   const [, setAnimationFrame] = useState(0);
-  const [tooltip, setTooltip] = useState<{ x: number; y: number; content: React.ReactNode } | null>(null);
+  const [tooltip, setTooltip] = useState<{ content: React.ReactNode } | null>(null);
+  const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
+
+  // Simple tooltip positioning with flip logic
+  const getTooltipStyles = useCallback((x: number, y: number) => {
+    const tooltipWidth = 320;
+    const tooltipHeight = 150; // Estimated height
+    const padding = 16;
+    const offset = 8;
+    
+    let left = x + offset;
+    let top = y + offset;
+    
+    // Flip to left if would overflow right
+    if (left + tooltipWidth > window.innerWidth - padding) {
+      left = x - tooltipWidth - offset;
+    }
+    
+    // Flip to top if would overflow bottom
+    if (top + tooltipHeight > window.innerHeight - padding) {
+      top = y - tooltipHeight - offset;
+    }
+    
+    // Ensure doesn't go off screen
+    left = Math.max(padding, Math.min(left, window.innerWidth - tooltipWidth - padding));
+    top = Math.max(padding, Math.min(top, window.innerHeight - tooltipHeight - padding));
+    
+    return { left, top };
+  }, []);
   
   // UI State
   const [activeTab, setActiveTab] = useState<'location' | 'layers' | 'info'>('location');
@@ -253,6 +282,9 @@ export default function WeatherVisualization() {
     if (object && 'properties' in object) {
       let tooltipContent = null;
       
+      // Update tooltip position
+      setTooltipPosition({ x, y });
+      
       // GeoJSON 구역 hover
       if ('precipitation' in object.properties) {
         const district = object;
@@ -274,7 +306,7 @@ export default function WeatherVisualization() {
           precipitation > 0 ? '🌦️' : '☀️';
 
         tooltipContent = (
-          <div className="bg-white/95 backdrop-blur-sm border border-gray-200 rounded-lg shadow-xl p-3 max-w-xs">
+          <div>
             <div className="flex items-center gap-2 mb-2">
               <span className="text-lg">{weatherEmoji}</span>
               <span className="font-semibold text-gray-900">{districtName}</span>
@@ -296,7 +328,7 @@ export default function WeatherVisualization() {
       else if ('name' in object.properties && 'height' in object.properties) {
         const building = object;
         tooltipContent = (
-          <div className="bg-white/95 backdrop-blur-sm border border-gray-200 rounded-lg shadow-xl p-3 max-w-xs">
+          <div>
             <div className="flex items-center gap-2 mb-2">
               <span className="text-lg">🏢</span>
               <span className="font-semibold text-gray-900">{building.properties.name}</span>
@@ -312,7 +344,7 @@ export default function WeatherVisualization() {
       }
       
       if (tooltipContent) {
-        setTooltip({ x, y, content: tooltipContent });
+        setTooltip({ content: tooltipContent });
       } else {
         setTooltip(null);
       }
@@ -858,8 +890,12 @@ export default function WeatherVisualization() {
 
       {tooltip && (
         <div
-          className="absolute pointer-events-none z-20"
-          style={{ left: tooltip.x + 10, top: tooltip.y + 10 }}
+          className="absolute pointer-events-none z-20 bg-white/95 backdrop-blur-sm border border-gray-200 rounded-lg shadow-xl p-3 max-w-xs"
+          style={{
+            ...getTooltipStyles(tooltipPosition.x, tooltipPosition.y),
+            opacity: 1,
+            transition: 'opacity 0.15s ease-in-out',
+          }}
         >
           {tooltip.content}
         </div>
