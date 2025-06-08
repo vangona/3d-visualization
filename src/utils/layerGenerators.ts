@@ -1,4 +1,4 @@
-import { GeoJsonLayer, ScatterplotLayer } from '@deck.gl/layers';
+import { GeoJsonLayer, ScatterplotLayer, ColumnLayer } from '@deck.gl/layers';
 import { WeatherStation, CloudParticle, RainParticle } from '@/types/weather';
 import { SeoulGeoJSON, SeoulDistrictFeature } from '@/data/seoul-geojson-loader';
 
@@ -72,7 +72,7 @@ export const createDistrictRainLayer = (
 };
 
 // Generate cloud base layer
-export const createCloudBaseLayer = (cloudParticles: CloudParticle[]) => {
+export const createCloudBaseLayer = (cloudParticles: CloudParticle[], zoom: number = 11) => {
   return new ScatterplotLayer({
     id: 'clouds-base',
     data: cloudParticles,
@@ -82,11 +82,16 @@ export const createCloudBaseLayer = (cloudParticles: CloudParticle[]) => {
       const alpha = Math.floor(d.opacity * 255); // 0-1 범위를 0-255로 변환
       return [d.color[0], d.color[1], d.color[2], alpha];
     },
-    getRadius: (d: CloudParticle) => d.size * 1.3, // 더 큰 크기로 겹침 증가
+    getRadius: (d: CloudParticle) => {
+      // 줌 레벨에 따른 크기 조정
+      const zoomMultiplier = zoom >= 13 ? 1 + (zoom - 13) * 0.3 : // 13+ 줌에서 30%씩 증가
+                            zoom >= 11 ? 0.8 + (zoom - 11) * 0.1 : 0.8; // 11-13에서 점진 증가
+      return d.size * 1.3 * zoomMultiplier;
+    },
     radiusUnits: 'meters',
     opacity: 1, // 전체 레이어 투명도를 1로 설정 (개별 알파값만 사용)
     radiusMinPixels: 25,
-    radiusMaxPixels: 400,
+    radiusMaxPixels: Math.min(600, 400 + (zoom - 11) * 50), // 줌에 따라 최대 크기 증가
     stroked: false,
     filled: true,
     antialiasing: true,
@@ -99,7 +104,7 @@ export const createCloudBaseLayer = (cloudParticles: CloudParticle[]) => {
 };
 
 // Generate cloud highlight layer
-export const createCloudHighlightLayer = (cloudParticles: CloudParticle[]) => {
+export const createCloudHighlightLayer = (cloudParticles: CloudParticle[], zoom: number = 11) => {
   return new ScatterplotLayer({
     id: 'clouds-highlight',
     data: cloudParticles.filter((_, index) => index % 3 === 0), // 1/3만 렌더링
@@ -114,11 +119,16 @@ export const createCloudHighlightLayer = (cloudParticles: CloudParticle[]) => {
         alpha
       ];
     },
-    getRadius: (d: CloudParticle) => d.size * 0.7, // 더 작은 하이라이트
+    getRadius: (d: CloudParticle) => {
+      // 줌 레벨에 따른 크기 조정 (하이라이트용)
+      const zoomMultiplier = zoom >= 13 ? 1 + (zoom - 13) * 0.3 : 
+                            zoom >= 11 ? 0.8 + (zoom - 11) * 0.1 : 0.8;
+      return d.size * 0.7 * zoomMultiplier;
+    },
     radiusUnits: 'meters',
     opacity: 1, // 전체 레이어 투명도를 1로 설정
     radiusMinPixels: 15,
-    radiusMaxPixels: 200,
+    radiusMaxPixels: Math.min(300, 200 + (zoom - 11) * 25), // 하이라이트 최대 크기 증가
     stroked: false,
     filled: true,
     antialiasing: true,
@@ -130,13 +140,33 @@ export const createCloudHighlightLayer = (cloudParticles: CloudParticle[]) => {
   });
 };
 
-// Generate rain layer
-export const createRainLayer = (rainParticles: RainParticle[]) => {
+// Generate rain layer with viewport-based filtering
+export const createRainLayer = (
+  rainParticles: RainParticle[], 
+  viewState?: { longitude: number; latitude: number; zoom: number }
+) => {
+  // For now, show all particles to debug the disappearing issue
+  let filteredParticles = rainParticles;
+  
+  if (viewState && viewState.zoom < 11) {
+    // Only filter at very low zoom levels
+    console.log('Filtering rain particles for low zoom:', viewState.zoom);
+    
+    filteredParticles = rainParticles.filter((_, index) => {
+      // Keep fewer particles only at very low zoom
+      const hash = (index * 2654435761) % 10;
+      return hash < 3; // Keep 30% at low zoom
+    });
+    
+    console.log('Filtered rain particles:', filteredParticles.length, 'from', rainParticles.length);
+  } else {
+    console.log('Showing all rain particles:', rainParticles.length, 'at zoom:', viewState?.zoom);
+  }
   return new ScatterplotLayer({
     id: 'rain-main',
-    data: rainParticles,
+    data: filteredParticles,
     getPosition: (d: RainParticle) => d.position,
-    getFillColor: [100, 150, 255, 200], // 선명한 파란색 빗방울
+    getFillColor: [60, 100, 220, 240], // 더 진한 파란색 빗방울
     getRadius: (d: RainParticle) => d.size, // 원래 크기
     radiusUnits: 'meters',
     opacity: 1.0,
@@ -150,6 +180,129 @@ export const createRainLayer = (rainParticles: RainParticle[]) => {
       blend: true,
       blendFunc: [0x0302, 0x0303], // GL.SRC_ALPHA, GL.ONE_MINUS_SRC_ALPHA
       blendEquation: 0x8006, // GL.FUNC_ADD
+      depthTest: true,
+      depthMask: true
+    }
+  });
+};
+
+// Generate 3D column layer for overview visualization
+export const createWeatherColumnLayer = (
+  weatherStations: WeatherStation[],
+  seoulGeoJSON: SeoulGeoJSON | null,
+  zoom: number
+) => {
+  if (!seoulGeoJSON || zoom > 11) { // Changed to > 11 so columns show at zoom 11
+    return null;
+  }
+  
+  console.log('Creating weather columns at zoom:', zoom);
+
+  // Calculate district centers from GeoJSON
+  const districtCenters = weatherStations.map(station => {
+    // Find corresponding district feature
+    const districtFeature = seoulGeoJSON.features.find(
+      (f: SeoulDistrictFeature) => f.properties.sggnm === station.name
+    );
+
+    if (!districtFeature) {
+      return {
+        station,
+        center: [station.location.longitude, station.location.latitude],
+        area: 1000000 // Default area
+      };
+    }
+
+    // Calculate area for radius calculation
+    const coordinates = districtFeature.geometry.coordinates;
+    let totalArea = 0;
+    
+    // Simple area calculation for polygon
+    if (coordinates && coordinates[0]) {
+      const polygon = coordinates[0];
+      if (Array.isArray(polygon) && polygon.length > 0) {
+        totalArea = polygon.length * 1000; // Approximate area
+      }
+    }
+
+    // Calculate centroid
+    const center = [station.location.longitude, station.location.latitude];
+
+    return {
+      station,
+      center,
+      area: Math.max(500000, totalArea)
+    };
+  });
+
+  console.log('District centers created:', districtCenters.length);
+  console.log('Sample district data:', districtCenters[0]);
+
+  return new ColumnLayer({
+    id: 'weather-columns',
+    data: districtCenters,
+    getPosition: (d: { center: [number, number] }) => d.center,
+    getElevation: (d: { station: WeatherStation }) => {
+      // Height based on precipitation (100-2000m)
+      const precipitation = d.station.weather.precipitation;
+      const height = Math.max(100, precipitation * 80 + 200);
+      console.log(`Station ${d.station.name}: precipitation=${precipitation}, height=${height}`);
+      return height;
+    },
+    getFillColor: (d: { station: WeatherStation }) => {
+      const precipitation = d.station.weather.precipitation;
+      const cloudCoverage = d.station.weather.cloudCoverage;
+      
+      let color;
+      // 현재 UI 색상 체계에 맞춘 색상 (지면 레이어와 유사한 색역)
+      if (precipitation > 20) {
+        // 폭우 - 진한 파랑 (강수 강도에 따라)
+        const intensity = Math.min(precipitation / 30, 1);
+        color = [30, 80, 180, Math.max(180, 200 + intensity * 55)];
+      } else if (precipitation > 10) {
+        // 비 - 중간 파랑
+        const intensity = Math.min(precipitation / 20, 1);
+        color = [50, 100, 200, Math.max(160, 180 + intensity * 75)];
+      } else if (precipitation > 1) {
+        // 약한 비 - 연한 파랑
+        const intensity = Math.min(precipitation / 10, 1);
+        color = [80, 130, 220, Math.max(140, 160 + intensity * 95)];
+      } else if (cloudCoverage > 50) {
+        // 흐림 - 연한 회색 (UI의 회색과 유사)
+        color = [180, 180, 185, 160];
+      } else {
+        // 맑음 - 연한 노란색 (UI의 노란색과 유사)
+        color = [255, 255, 150, 180];
+      }
+      
+      console.log(`Station ${d.station.name}: precip=${precipitation}, cloud=${cloudCoverage}, color=${color}`);
+      return color;
+    },
+    getLineColor: [120, 120, 130, 220], // 더 부드러운 테두리
+    getRadius: (d: { station: WeatherStation; area: number }) => {
+      // Radius based on district area and weather intensity
+      const baseRadius = Math.sqrt(d.area) * 0.8;
+      const weatherMultiplier = 1 + (d.station.weather.precipitation * 0.05);
+      return Math.max(200, Math.min(800, baseRadius * weatherMultiplier));
+    },
+    elevationScale: 1,
+    radius: 300,
+    opacity: 0.9,
+    stroked: true,
+    filled: true,
+    extruded: true,
+    wireframe: false,
+    lineWidthMinPixels: 1,
+    lineWidthMaxPixels: 2,
+    // 조명 설정 추가 - 더 밝게
+    material: {
+      ambient: 0.9,  // 주변광을 더 높게
+      diffuse: 0.8,  // 확산광도 증가
+      shininess: 16,
+      specularColor: [255, 255, 255]
+    },
+    // 추가 렌더링 설정
+    parameters: {
       depthTest: true,
       depthMask: true
     }

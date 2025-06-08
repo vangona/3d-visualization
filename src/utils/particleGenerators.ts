@@ -103,8 +103,9 @@ const generateSingleCloudParticle = (
   ];
   
   // 구름 고도: 강수량이 많을수록 낮은 구름 + 클러스터별 변화
-  const baseAltitude = 1800 - (station.weather.precipitation * 40) + (cluster * 200);
-  const altitude = baseAltitude + Math.random() * 800;
+  // 비보다 확실히 높게 설정 (비: 300-1500m, 구름: 1600-2800m)
+  const baseAltitude = 1600 - (station.weather.precipitation * 30) + (cluster * 150);
+  const altitude = baseAltitude + Math.random() * 1200;
   
   // 클러스터 중심에서의 거리에 따른 투명도 계산 (더 부드러운 그라데이션)
   const distanceFromClusterCenter = distance / spreadRadius;
@@ -141,7 +142,11 @@ const generateSingleCloudParticle = (
 };
 
 // Generate rain particles based on precipitation within district boundaries
-export const generateRainParticles = (stations: WeatherStation[], geoJSON: SeoulGeoJSON): RainParticle[] => {
+export const generateRainParticles = (
+  stations: WeatherStation[], 
+  geoJSON: SeoulGeoJSON, 
+  viewState?: { longitude: number; latitude: number; zoom: number }
+): RainParticle[] => {
   const particles: RainParticle[] = [];
   let particleId = 0;
   
@@ -157,12 +162,38 @@ export const generateRainParticles = (stations: WeatherStation[], geoJSON: Seoul
     const weatherState = getWeatherState(station.weather.precipitation, station.weather.cloudCoverage);
     
     if (station.weather.precipitation > 0) {
-      // 강수량에 비례한 빗방울 수 (날씨 상태에 따라 조정)
-      const baseCount = station.weather.precipitation * 25;
-      const stateMultiplier = weatherState.id === 'heavy_rain' ? 2.0 :
-                             weatherState.id === 'rainy' ? 1.5 :
-                             weatherState.id === 'cloudy' ? 1.2 : 1.0;
-      const particleCount = Math.floor(baseCount * stateMultiplier);
+      // Calculate distance from viewport center for optimization
+      let distanceMultiplier = 1.0;
+      let zoomMultiplier = 1.0;
+      
+      if (viewState) {
+        // Distance-based optimization
+        const distanceFromCenter = Math.sqrt(
+          Math.pow(station.location.longitude - viewState.longitude, 2) +
+          Math.pow(station.location.latitude - viewState.latitude, 2)
+        );
+        
+        // Reduce particles for distant areas (beyond ~0.05 degrees)
+        if (distanceFromCenter > 0.05) {
+          distanceMultiplier = Math.max(0.3, 1 - (distanceFromCenter - 0.05) * 5);
+        }
+        
+        // Zoom-based density increase
+        if (viewState.zoom >= 13) {
+          zoomMultiplier = 1 + (viewState.zoom - 13) * 0.5; // 50% more per zoom level
+        } else if (viewState.zoom >= 11) {
+          zoomMultiplier = 0.5 + (viewState.zoom - 11) * 0.25; // Gradual increase
+        } else {
+          zoomMultiplier = 0.2; // Very few particles at overview
+        }
+      }
+      
+      // 강수량에 비례한 빗방울 수 (날씨 상태에 따라 조정, 거리/줌 최적화 제거)
+      const baseCount = station.weather.precipitation * 35; // 더 많은 기본 파티클
+      const stateMultiplier = weatherState.id === 'heavy_rain' ? 2.5 :
+                             weatherState.id === 'rainy' ? 1.8 :
+                             weatherState.id === 'cloudy' ? 1.3 : 1.0;
+      const particleCount = Math.floor(baseCount * stateMultiplier); // 거리/줌 조정 제거
       
       // 해당 구의 모든 동 features 찾기
       const districtFeatures = geoJSON.features.filter((f: SeoulDistrictFeature) => f.properties.sggnm === station.name);
@@ -190,7 +221,7 @@ export const generateRainParticles = (stations: WeatherStation[], geoJSON: Seoul
     }
   });
   
-  console.log('Generated', particles.length, 'rain particles');
+  console.log('Generated', particles.length, 'rain particles', viewState ? `(zoom: ${viewState.zoom.toFixed(1)})` : '');
   return particles;
 };
 
@@ -224,8 +255,9 @@ const generateSingleRainParticle = (
     point = [(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2];
   }
   
-  // 빗줄기를 표현하기 위해 다양한 시작 높이
-  const startHeight = 500 + Math.random() * 2000;
+  // 빗줄기를 구름 아래에서 시작하도록 조정
+  // 구름의 최소 고도보다 낮게 설정 (구름: 1800-2600m, 비: 300-1500m)
+  const startHeight = 300 + Math.random() * 1200;
   
   // 날씨 상태에 따른 비 속도와 크기 조정
   const velocity = weatherState.id === 'heavy_rain' ? -25 - Math.random() * 15 :

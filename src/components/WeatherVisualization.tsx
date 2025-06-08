@@ -24,14 +24,14 @@ import { WEATHER_STATES } from '@/constants/weather';
 import { getWeatherDisplay, calculateWeatherEffects } from '@/utils/weather';
 import { generateMockWeatherStations, generateDongData } from '@/utils/dataGenerators';
 import { generateCloudParticles, generateRainParticles } from '@/utils/particleGenerators';
-import { createDistrictRainLayer, createCloudBaseLayer, createCloudHighlightLayer, createRainLayer } from '@/utils/layerGenerators';
+import { createDistrictRainLayer, createCloudBaseLayer, createCloudHighlightLayer, createRainLayer, createWeatherColumnLayer } from '@/utils/layerGenerators';
 
 export default function WeatherVisualization() {
   const [viewState, setViewState] = useState<MapViewState>({
     longitude: 126.9780,  // 서울시청
     latitude: 37.5665,
-    zoom: 11,
-    pitch: 0, // 위에서 내려다보는 각도로 테스트
+    zoom: 10.5, // 원기둥이 보이도록 줌 조정
+    pitch: 45, // 3D 원기둥을 잘 보이도록 각도 조정
     bearing: 0,
   });
 
@@ -68,13 +68,13 @@ export default function WeatherVisualization() {
     setCloudParticles(cloudParticlesMemo);
   }, [cloudParticlesMemo]);
 
-  // Generate initial rain particles when weather data changes
+  // Generate initial rain particles when weather data changes (not on every viewState change)
   useEffect(() => {
     if (weatherStations.length > 0 && seoulGeoJSON) {
-      const initialRainParticles = generateRainParticles(weatherStations, seoulGeoJSON);
+      const initialRainParticles = generateRainParticles(weatherStations, seoulGeoJSON, viewState);
       setRainParticles(initialRainParticles);
     }
-  }, [weatherStations, seoulGeoJSON]);
+  }, [weatherStations, seoulGeoJSON]); // Remove viewState dependencies to prevent regeneration on pan/zoom
 
   // Animation loop for rain particles
   useEffect(() => {
@@ -88,15 +88,28 @@ export default function WeatherVisualization() {
           
           // 땅에 닿으면 재생성
           if (newAltitude < 0) {
-            // 간단하게 같은 위치에서 재생성
-            return {
-              ...particle,
-              position: [
-                particle.position[0],
-                particle.position[1],
-                500 + Math.random() * 2000,
-              ] as [number, number, number],
-            };
+            // 뷰포트 중심에서 거리 계산
+            const distanceFromCenter = Math.sqrt(
+              Math.pow(particle.position[0] - viewState.longitude, 2) +
+              Math.pow(particle.position[1] - viewState.latitude, 2)
+            );
+            
+            // 중심에서 멀리 떨어진 파티클은 재생성 확률 감소
+            const regenerationChance = distanceFromCenter > 0.05 ? 0.3 : 1.0;
+            
+            if (Math.random() < regenerationChance) {
+              return {
+                ...particle,
+                position: [
+                  particle.position[0],
+                  particle.position[1],
+                  300 + Math.random() * 1200, // 구름보다 낮은 고도에서 재생성
+                ] as [number, number, number],
+              };
+            } else {
+              // 재생성하지 않고 제거 (필터링됨)
+              return null;
+            }
           }
           
           return {
@@ -107,7 +120,7 @@ export default function WeatherVisualization() {
               newAltitude,
             ] as [number, number, number],
           };
-        });
+        }).filter(particle => particle !== null) as RainParticle[];
       });
     };
 
@@ -119,17 +132,14 @@ export default function WeatherVisualization() {
   const lightingEffect = (() => {
     const weatherEffects = calculateWeatherEffects(weatherStations);
     
-    // 날씨 상태에 따른 조명 색상 적용
-    const ambientColor = weatherEffects.ambientColor.map(c => c * 255) as [number, number, number];
-    
     const ambientLight = new AmbientLight({
-      color: ambientColor,
-      intensity: weatherEffects.brightness * 0.8,
+      color: [255, 255, 255], // 원기둥이 잘 보이도록 흰색 조명
+      intensity: Math.max(0.7, weatherEffects.brightness * 0.8), // 최소 밝기 보장
     });
 
     const directionalLight = new DirectionalLight({
-      color: ambientColor,
-      intensity: weatherEffects.brightness * 1.0,
+      color: [255, 255, 255], // 원기둥이 잘 보이도록 흰색 조명
+      intensity: Math.max(0.8, weatherEffects.brightness * 1.0), // 최소 밝기 보장
       direction: [-1, -3, -1],
     });
 
@@ -138,29 +148,57 @@ export default function WeatherVisualization() {
 
   const layers = useMemo(() => {
     const layerList = [];
-    // District area layer (all districts with weather-based coloring)
+    const currentZoom = viewState.zoom;
+
+    console.log('Creating layers for zoom level:', currentZoom);
+
+    // Weather column layer for overview (zoom <= 11)
+    const columnLayer = createWeatherColumnLayer(weatherStations, seoulGeoJSON, currentZoom);
+    if (columnLayer) {
+      layerList.push(columnLayer);
+      console.log('Added weather column layer at zoom:', currentZoom);
+    }
+
+    // District area layer (always visible for context)
     const districtLayer = createDistrictRainLayer(weatherStations, seoulGeoJSON);
     if (districtLayer) {
       layerList.push(districtLayer);
+      console.log('Added district layer');
     }
 
-    // Cloud layers
-    if (cloudParticles.length > 0) {
-      layerList.push(createCloudBaseLayer(cloudParticles));
-      layerList.push(createCloudHighlightLayer(cloudParticles));
+    // Particle layers (zoom >= 11 for gradual appearance)
+    if (currentZoom >= 11) {
+      // Calculate opacity based on zoom level for smooth transition
+      const particleOpacity = Math.min(1, (currentZoom - 11) / 2); // 0 at zoom 11, 1 at zoom 13+
+      
+      // Cloud layers with zoom-based opacity
+      if (cloudParticles.length > 0 && particleOpacity > 0) {
+        layerList.push(createCloudBaseLayer(cloudParticles, currentZoom));
+        layerList.push(createCloudHighlightLayer(cloudParticles, currentZoom));
+        console.log('Added cloud layers with opacity:', particleOpacity, 'zoom:', currentZoom);
+      }
+
+      // Rain layer with zoom-based opacity and viewport filtering
+      if (rainParticles.length > 0 && particleOpacity > 0) {
+        layerList.push(createRainLayer(rainParticles, { 
+          longitude: viewState.longitude, 
+          latitude: viewState.latitude, 
+          zoom: currentZoom 
+        }));
+        console.log('Added rain layer with', rainParticles.length, 'particles at zoom:', currentZoom);
+      }
     }
 
-    // Rain layer
-    if (rainParticles.length > 0) {
-      layerList.push(createRainLayer(rainParticles));
-    }
-
+    console.log('Total layers created:', layerList.length);
     return layerList;
   }, [
     weatherStations, 
     seoulGeoJSON,
     cloudParticles,
     rainParticles,
+    viewState.zoom,
+    viewState.longitude,
+    viewState.latitude
   ]);
 
   const handleHover = useCallback(({ x, y, object }: PickingInfo) => {
