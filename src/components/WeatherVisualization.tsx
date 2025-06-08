@@ -4,6 +4,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { DeckGL } from '@deck.gl/react';
 import {
   PointCloudLayer,
+  ScatterplotLayer,
 } from '@deck.gl/layers';
 import { 
   MapViewState, 
@@ -317,14 +318,14 @@ const generateCloudParticles = (stations: WeatherStation[], geoJSON: SeoulGeoJSO
             clusterCenter = [(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2];
           }
           
-          // 각 클러스터 내에 여러 크기의 파티클 생성 (줌 레벨 고려)
-          const particlesPerCluster = Math.floor(cloudDensity * 20) + 8; // 더 많은 파티클
+          // 적절한 수의 파티클로 조정
+          const particlesPerCluster = Math.floor(cloudDensity * 15) + 8;
           
           for (let i = 0; i < particlesPerCluster; i++) {
-            // 클러스터 중심 주변에 파티클 분산 (더 자연스러운 분산)
-            const spreadRadius = 0.002 + Math.random() * 0.008; // 가변적인 분산 반경
+            // 클러스터 중심 주변에 파티클 분산
+            const spreadRadius = 0.004 + Math.random() * 0.008;
             const angle = Math.random() * Math.PI * 2;
-            const distance = Math.pow(Math.random(), 0.7) * spreadRadius; // 중심부에 더 집중
+            const distance = Math.pow(Math.random(), 0.6) * spreadRadius;
             
             const point: [number, number] = [
               clusterCenter[0] + Math.cos(angle) * distance,
@@ -348,13 +349,13 @@ const generateCloudParticles = (stations: WeatherStation[], geoJSON: SeoulGeoJSO
             const finalG = Math.min(255, g * colorVariation);
             const finalB = Math.min(255, b * colorVariation);
             
-            // 구름 크기: 클러스터 내에서 다양한 크기 + 날씨별 배율
+            // 더 큰 크기로 조정하여 겹침 효과 증대
             const sizeRandomness = Math.random();
-            const baseSizeVariation = sizeRandomness < 0.3 ? 20 + Math.random() * 40 : // 30% 작은 구름
-                                     sizeRandomness < 0.7 ? 45 + Math.random() * 60 : // 40% 중간 구름
-                                     80 + Math.random() * 100; // 30% 큰 구름
+            const baseSizeVariation = sizeRandomness < 0.3 ? 80 + Math.random() * 40 : // 30% 중간
+                                     sizeRandomness < 0.7 ? 120 + Math.random() * 60 : // 40% 큰
+                                     180 + Math.random() * 80; // 30% 매우 큰
             
-            const sizeMultiplier = weatherState.id === 'heavy_rain' ? 1.3 : 
+            const sizeMultiplier = weatherState.id === 'heavy_rain' ? 1.2 : 
                                   weatherState.id === 'rainy' ? 1.1 :
                                   weatherState.id === 'cloudy' ? 1.0 : 
                                   weatherState.id === 'partly_cloudy' ? 0.8 : 0.7;
@@ -664,17 +665,51 @@ export default function WeatherVisualization() {
 
     // Weather station layer 제거 - 행정구역으로 대체됨
 
-    // Cloud layer
+    // Cloud layer - 다중 ScatterplotLayer로 부피감 표현
     if (cloudParticles.length > 0) {
+      // 기본 구름 레이어 (원형을 활용한 부드러운 효과)
       layers.push(
-        new PointCloudLayer({
-          id: 'clouds',
+        new ScatterplotLayer({
+          id: 'clouds-base',
           data: cloudParticles,
           getPosition: (d: CloudParticle) => d.position,
-          getColor: (d: CloudParticle) => [...d.color, d.opacity * 255],
-          getNormal: [0, 0, 1],
-          pointSize: 15, // 더 큰 포인트 크기
-          opacity: 0.4, // 전체적으로 낮은 투명도로 겹침 효과
+          getFillColor: (d: CloudParticle) => [...d.color, d.opacity * 180],
+          getRadius: (d: CloudParticle) => d.size,
+          radiusUnits: 'meters',
+          opacity: 0.6,
+          radiusMinPixels: 20,
+          radiusMaxPixels: 300,
+          stroked: false,
+          filled: true,
+          antialiasing: true,
+          billboard: true, // 항상 카메라를 향함
+        })
+      );
+      
+      // 고도에 따른 그림자 효과 (아래쪽에 더 어두운 레이어)
+      layers.push(
+        new ScatterplotLayer({
+          id: 'clouds-shadow',
+          data: cloudParticles.map(p => ({
+            ...p,
+            position: [p.position[0], p.position[1], p.position[2] - 300] as [number, number, number]
+          })),
+          getPosition: (d: CloudParticle) => d.position,
+          getFillColor: (d: CloudParticle) => [
+            d.color[0] * 0.6,
+            d.color[1] * 0.6,
+            d.color[2] * 0.6,
+            d.opacity * 100
+          ],
+          getRadius: (d: CloudParticle) => d.size * 1.2,
+          radiusUnits: 'meters',
+          opacity: 0.3,
+          radiusMinPixels: 25,
+          radiusMaxPixels: 350,
+          stroked: false,
+          filled: true,
+          antialiasing: true,
+          billboard: true,
         })
       );
     }
