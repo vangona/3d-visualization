@@ -771,7 +771,7 @@ export default function WeatherVisualization() {
 
       {/* Weather Summary Card - Hidden on mobile when panel is open */}
       {!isCollapsed && (
-        <div className="absolute top-4 right-4 z-10 bg-white/95 backdrop-blur-sm rounded-lg shadow-lg border border-gray-200 p-3 sm:p-4 w-48 sm:w-64 hidden md:block">
+        <div className="absolute top-20 right-4 z-10 bg-white/95 backdrop-blur-sm rounded-lg shadow-lg border border-gray-200 p-3 sm:p-4 w-48 sm:w-64 hidden md:block">
           <div className="text-sm font-medium text-gray-900 mb-2">실시간 날씨 현황</div>
           <div className="space-y-2">
             {weatherStations.slice(0, 3).map((station) => (
